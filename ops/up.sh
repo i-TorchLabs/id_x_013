@@ -92,7 +92,7 @@ if ! podman container exists id_x_013-service; then
     -e PROJECT_PATH=/app/id_x_000 \
     -v ./.env:/app/id_x_000/.env:ro \
     -v ../logs:/app/id_x_000/logs \
-    --health-cmd "curl -s -o /dev/null http://127.0.0.1:8000/b/id_x_013/graphql || exit 1" \
+    --health-cmd "curl -s -o /dev/null http://127.0.0.1:7000/b/id_x_013/graphql || exit 1" \
     --health-interval 15s \
     --health-timeout 5s \
     --health-retries 10 \

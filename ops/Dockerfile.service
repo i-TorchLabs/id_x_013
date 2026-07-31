@@ -51,8 +51,8 @@ COPY x_models/id_x_002_c2 /app/id_x_000/x_models/id_x_002_c2
 # 运行时目录（logs 由 compose 挂卷持久化）
 RUN mkdir -p /app/id_x_000/logs
 
-EXPOSE 8000
+EXPOSE 7000
 
 # Granian 作为 ASGI 服务器跑引擎层 main:obj（Litestar 实例）。
-# LISTEN_PORT 在 base_config.toml 中为 8000。
+# LISTEN_PORT 在 base_config.toml 中为 7000。
 CMD ["python", "main.py"]

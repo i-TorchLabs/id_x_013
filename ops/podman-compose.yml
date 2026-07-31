@@ -6,8 +6,8 @@ name: id_x_013
 #   - 同一 Pod 的容器共享 network namespace，彼此通过 127.0.0.1 互访
 #   - 仅 haproxy 通过 Pod 端口映射暴露到宿主机：宿主机 8085 -> Pod 8080
 #   - 路由：
-#         /b/id_x_013/   ->  service:8000   (Litestar + GraphQL)
-#         其余           ->  web:3000       (Next.js)
+#         /b/id_x_013/   ->  service:7000   (Litestar + GraphQL)
+#         其余           ->  web:2000       (Next.js)
 #
 #   Pod 需预先创建（参考 up.sh / down.sh）：
 #     podman pod create --name id_x_013 -p 8085:8080
@@ -61,7 +61,7 @@ services:
       - ../logs:/app/id_x_000/logs
     healthcheck:
       # GraphQL 端点对 GET 返回 400（期望 POST），这里只要 TCP/HTTP 有响应即视为存活
-      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8000/b/id_x_013/graphql || exit 1"]
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:7000/b/id_x_013/graphql || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10

@@ -3,8 +3,8 @@
 # 构建上下文为 x_models/id_x_013/web：
 #   podman build -t id_x_013-web -f x_models/id_x_013/web/Dockerfile x_models/id_x_013/web
 #
-# 运行时端口 3000（由 next start 通过 PORT 环境变量决定），
-# haproxy 在同 Pod 内通过 127.0.0.1:3000 访问。
+# 运行时端口 2000（由 next start 通过 PORT 环境变量决定），
+# haproxy 在同 Pod 内通过 127.0.0.1:2000 访问。
 
 # --------------------------- 构建阶段 ---------------------------
 FROM node:24-alpine AS build
@@ -27,7 +27,7 @@ FROM node:24-alpine
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    PORT=3000 \
+    PORT=2000 \
     HOSTNAME=0.0.0.0
 
 # 拷贝构建产物与运行时所需文件
@@ -40,5 +40,5 @@ COPY --from=build /app/next.config.ts ./
 COPY --from=build /app/postcss.config.mjs ./
 COPY --from=build /app/tsconfig.json ./
 
-EXPOSE 3000
+EXPOSE 2000
 CMD ["npm", "start"]

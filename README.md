@@ -341,12 +341,12 @@ python main.py
 
 # 启动前端
 cd x_models/id_x_013/web
-cnpm run dev      # 开发模式，默认 3000 端口
+cnpm run dev      # 开发模式，默认 2000 端口
 # 或
 cnpm run build && cnpm run start   # 生产模式
 ```
 
-后端默认监听主程序配置端口（如 `0.0.0.0:8000`），前端 Next.js 默认监听 `3000`。生产环境通过 HAProxy 将 `/b/id_x_013/*` 路由到后端、其余路由到前端，配置见 `ops/haproxy.cfg`。
+后端默认监听主程序配置端口（如 `0.0.0.0:7000`），前端 Next.js 默认监听 `2000`。生产环境通过 HAProxy 将 `/b/id_x_013/*` 路由到后端、其余路由到前端，配置见 `ops/haproxy.cfg`。
 
 ### 9.5 容器部署
 
