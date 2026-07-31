@@ -1,378 +1,389 @@
 <div align="center">
 
-# id_x_013
+# id_x_013: 数据导入工作台
 
-基于 Litestar + Strawberry GraphQL 的 Excel/CSV 数据导入工具插件，上传文件即可在用户自有的 PostgreSQL 数据库中自动建表并批量入库。
+**面向科研数据资产的 Excel/CSV 解析与 PostgreSQL 自动建表导入组件**
 
-![License](https://img.shields.io/badge/License-AGPL--3.0-lightgray?style=flat-square&labelColor=black)
-![Author](https://img.shields.io/badge/Author-Ray-lightgray?style=flat-square&labelColor=black)
-![Organization](https://img.shields.io/badge/Organization-TorchLabs-lightgray?style=flat-square&labelColor=black)
-![Engine](https://img.shields.io/badge/Engine-React%20Litestar-lightgray?style=flat-square&labelColor=black)
-![Language](https://img.shields.io/badge/Language-Python-lightgray?style=flat-square&labelColor=black)
-![Database](https://img.shields.io/badge/Database-PostgreSQL-lightgray?style=flat-square&labelColor=black)
+![编号](https://img.shields.io/static/v1?label=编号&message=id_x_013&color=lightgray&style=flat-square&labelColor=black)
+![协议](https://img.shields.io/static/v1?label=协议&message=AGPL-3.0&color=lightgray&style=flat-square&labelColor=black)
+![作者](https://img.shields.io/static/v1?label=作者&message=Ray&color=lightgray&style=flat-square&labelColor=black)
+![组织](https://img.shields.io/static/v1?label=组织&message=TorchLabs&color=lightgray&style=flat-square&labelColor=black)
+![引擎](https://img.shields.io/static/v1?label=引擎&message=Litestar%20%2B%20Granian&color=lightgray&style=flat-square&labelColor=black)
+![语言](https://img.shields.io/static/v1?label=语言&message=Python%20%2F%20TypeScript&color=lightgray&style=flat-square&labelColor=black)
+![数据库](https://img.shields.io/static/v1?label=数据库&message=PostgreSQL&color=lightgray&style=flat-square&labelColor=black)
 
 </div>
 
-## 1 项目简介
+---
 
-### 1.1 Slogan
+## 1 简介
 
-上传一份 Excel/CSV，自动在你的 PostgreSQL 中建表并导入——一个面向数据治理场景的零代码入库插件。
+**Slogan**：面向科研数据资产的 Excel/CSV 解析与 PostgreSQL 自动建表导入插件。
 
-### 1.2 Description
+id_x_013 是 TorchLabs/i-Torch（id_x_000）主程序的业务插件，定位为「上传即入库」的数据导入工作台。插件通过插件接口（Plugin Interface）契约挂载到主程序，对外暴露图查询语言（Graph Query Language, GraphQL）端点，对内遵循「控制器薄转发 → 视图承载业务 → 模型固化数据 → 模式声明契约」四层分层，覆盖用户登录、文件解析、目标库连接、自动建表、批量导入与表/字段注释生成的完整链路。
 
-id_x_013 是 i-Torch（引擎层 id_x_000）插件体系下的一个数据导入工具插件。它解决的核心问题是：业务人员拿到任意结构的表格文件后，无需编写 SQL 或脚本，即可在自身授权的 PostgreSQL 数据库中完成"建表 + 导入 + 字段注释"的完整闭环。
-
-项目以 GraphQL（Strawberry）对外暴露统一端点，内部严格遵循"控制器(thin resolver) → 视图(business logic) → 模型(ORM) / 契约(schema)"四层分层。插件通过 `x_plugin.py` 暴露的 `load_plugin()` 钩子接入引擎层，主程序仅依赖 `PluginInterface` 契约，不感知插件内部包结构，实现纯粹解耦。
-
-与同类导入工具相比，id_x_013 的差异化在于：模型表仅使用基础 SQL 类型（Integer/String/Text/DateTime/Boolean），不依赖 pgcrypto 或 pgvector，建表扩展依赖为零；同时以同一 Pod 内四容器（db / service / web / haproxy）共享网络命名空间的方式部署，单一端口对外暴露，运维链路极短。
+针对科研数据汇集中的「Excel/CSV 字段人工建表烦琐、字段类型易错、导入脚本难复用、多目标库无统一入口」等痛点，id_x_013 以 pandas 推断字段样本、用户自定义 PostgreSQL 类型、参数化 `executemany` 批量写入、单事务回滚给出可复现方案，相较手工 `COPY` 或独立脚本式方案具备更强的字段校验闭环与目标库可插拔能力，适用于实验数据归档、问卷批次入库、多库归集等场景。
 
 ## 2 核心特性
 
-- 文件解析：支持 `.csv` / `.xlsx` / `.xls` 三种格式，基于 pandas 自动推断字段类型并返回前 3 行样本值。
-- 自动建表：按用户传入的字段定义（名称 / 类型 / 注释）在目标 PostgreSQL 中执行 `CREATE TABLE IF NOT EXISTS`，并附加表级与列级 `COMMENT`。
-- 批量入库：以参数化 `INSERT ... executemany` 批量写入，NaN 自动转 `NULL`，缺失列以 `NULL` 填充。
-- 认证闭环：提供注册（默认未激活）/ 登录 / 忘记密码 / 登出 的令牌认证链路，令牌 24 h 过期。
-- 引擎解耦：通过 `PluginInterface` 契约接入 id_x_000 引擎，`required_extensions` 为空元组，建表零扩展依赖。
+- GraphQL 端点：基于 Strawberry 暴露查询（Query）/变更（Mutation）两类操作，统一前缀 `/b/id_x_013/graphql`，受主程序 Bearer 鉴权保护。
+- 文件解析：基于 pandas 解析 CSV、XLSX、XLS 三类文件，返回字段名称、字段数据类型（dtype）与前 3 行样本值，供前端预校验。
+- 自动建表与导入：依据用户传入的字段名与类型生成 `CREATE TABLE IF NOT EXISTS` 语句，附带表注释与字段注释；通过参数化 `executemany` 批量入库，导入异常时事务回滚。
+- 目标库可插拔：导入接口内嵌主机、端口、用户名、密码、数据库名五项参数，单次请求即可指向任意可达 PostgreSQL 实例，与主程序业务库物理隔离。
+- 容器化四件套：提供 `podman-compose.yml` 以四容器同 Pod 部署（数据库 / 服务 / 前端 / 反向代理），Pod 内容器共享网络命名空间，仅反向代理暴露宿主机端口。
 
 ## 3 项目亮点
 
-1. **插件契约解耦** —— 主程序仅 import `x_models._contracts.PluginInterface`，通过 `load_plugin()` 获取实例并依次调用 `base` / `set_session_maker` / `required_extensions` / `build_tables` 四个钩子；插件内部 models/controllers 不被主程序直接 import，保证插件解耦的纯粹性。
-2. **懒加载 ORM 元数据** —— `_Idx009Plugin.base` 采用 `@property` 懒加载，避免主程序加载插件时立即触发尚未就绪的 ORM 注册链；会话工厂由引擎层在 Litestar 启动后注入，避免循环依赖。
-3. **四层分层严格分离** —— 控制器层仅做参数透传与路由，不含任何业务逻辑或数据库操作；业务逻辑统一收敛于 `src/views/x_views.py` 的 `view_*` 函数；异常在视图内部捕获并转换为业务响应，控制器层不再 `try/except`。
-4. **零扩展依赖建表** —— 模型表刻意只用基础 SQL 类型，`required_extensions` 返回空元组，建表流程不依赖 pgcrypto / pgvector，降低了目标数据库的版本与扩展要求。
-5. **同 Pod 四容器部署** —— db / service / web / haproxy 共享 network namespace，彼此经 `127.0.0.1` 互访，仅 haproxy 经 Pod 端口映射暴露到宿主机（8085 → 8080），对外只暴露单一端口，内网通信无加密开销。
-6. **流量按前缀精确分流** —— HAProxy 以 `path_beg /b/id_x_013/` 区分前后端：API 流量转发至 service:8000，其余转发至 web:3000；大文件导入（base64 膨胀）后端 `timeout server` 单独放宽至 600 s。
-7. **参数化批量写入** —— 数据导入使用 `cursor.executemany` 配合 `%s` 占位符，规避 SQL 注入；缺失列以 `None` 填充、NaN 转 `NULL`，保证入库鲁棒性。
+1. **薄控制器分层** —— 控制器（x_controllers.py）仅做参数透传，业务逻辑全部下沉至视图（x_views.py），四层（控制器/视图/模型/模式）职责单一，便于单元测试与替换。
+2. **字段样本先行** —— `view_parse_file` 先解码 Base64 再按扩展名分流解析，输出字段 dtype 与前 3 行样本，前端可在导入前完成类型映射校对，避免脏数据落库。
+3. **类型由用户定义** —— `CreateTableInput.fields` 强制要求每字段给出 PostgreSQL 类型与可选注释，类型一律大写后写入 SQL，杜绝 panda dtype 与数据库类型错配。
+4. **单事务回滚闭环** —— 建表、注释、批量 INSERT 共用同一 psycopg2 连接，任意步异常即 `rollback()` 并返回已生成的 SQL 供排错，最终 `finally` 关闭游标与连接。
+5. **NaN 与 numpy 适配** —— 导入前逐值判 `pd.isna` 转 `None` 写 NULL，并通过 `v.item()` 将 numpy 标量转为原生 Python 类型，规避 psycopg2 无法适配 numpy.int64 等异常。
+6. **同 Pod 共享网络** —— Podman 四容器同 Pod 共享网络命名空间，数据库/服务/前端/反向代理通过 `127.0.0.1` 互访，仅反向代理 `:8080` 经 Pod 端口映射暴露，外部攻击面最小化。
+7. **配置表回退默认** —— `view_get_db_config` 优先查 `db_configs` 表 `is_default` 行，无默认则回退首行，前端无显式连接参数时仍可取到可用配置。
 
 ## 4 技术栈
 
-表1 id_x_013 技术栈一览
+表 4-1 id_x_013 技术栈一览
 
 | 分类 | 名称 | 版本 | 用途 |
 |---|---|---|---|
-| 编程语言 | Python | >= 3.10 | 后端业务与 ORM |
-| 编程语言 | TypeScript | ^5 | 前端类型系统 |
-| 核心框架（后端） | Litestar | latest | ASGI Web 框架，承载 GraphQL 路由 |
-| 核心框架（后端） | Strawberry GraphQL | latest | GraphQL schema 与 resolver |
-| 核心框架（后端） | Granian | latest | ASGI 服务器，运行引擎层 main |
-| 核心框架（后端） | SQLAlchemy | latest | 异步 ORM，声明式模型 |
-| 核心框架（后端） | Advanced Alchemy | latest | SQLAlchemy 会话与事务增强 |
-| 核心框架（前端） | Next.js | 16.2.3 | React 全栈框架 |
-| 核心框架（前端） | React | 19.2.4 | UI 运行时 |
-| UI 组件库 | HeroUI React | ^3.2.2 | 前端组件库 |
-| 样式工具 | Tailwind CSS | ^4 | 原子化 CSS |
-| 动效库 | Framer Motion | ^12.42.2 | 前端动画 |
-| 数据库/存储 | PostgreSQL | 18 | 业务库与目标入库库 |
-| 驱动 | asyncpg | latest | 异步 PostgreSQL 驱动 |
-| 驱动 | psycopg2 | latest | 同步驱动，建表与批量导入 |
-| 数据处理 | pandas | latest | Excel/CSV 解析与类型推断 |
-| 数据处理 | openpyxl | latest | xlsx/xls 引擎后端 |
-| 构建/编排 | Podman + podman-compose | latest | 四容器同 Pod 部署 |
-| 反向代理 | HAProxy | 3.0 | 前后端流量分流入口 |
+| 编程语言 | Python | ≥ 3.10 | 服务端主语言 |
+| 编程语言 | TypeScript | ≥ 5.0 | 前端主语言 |
+| 后端框架 | Litestar | ≥ 2.24 | ASGI 路由与中间件宿主 |
+| 应用服务器 | Granian | — | Rust 内核 ASGI 服务器 |
+| 接口协议 | Strawberry GraphQL | ≥ 0.323 | 查询/变更两类操作 |
+| 数据库 | PostgreSQL | 18 | 业务库与导入目标库 |
+| 同步驱动 | psycopg2 | ≥ 2.9 | 目标库建表与批量导入 |
+| 异步驱动 | asyncpg + SQLAlchemy | ≥ 2.0 | 业务库异步会话 |
+| 数据解析 | pandas + openpyxl | — | CSV/XLSX/XLS 解析 |
+| 前端框架 | Next.js | 16.2.3 | React 服务端渲染 |
+| UI 组件 | HeroUI + Tailwind CSS | ^3.2 / ^4 | 组件库与样式 |
+| 反向代理 | HAProxy | 3.0 | SSL 终止与路由分区 |
+| 容器编排 | Podman Compose | — | 四容器同 Pod 部署 |
 
 ## 5 整体架构图
 
 ```mermaid
-graph TD
-    subgraph Client["客户端"]
-        Browser["浏览器<br/>Next.js 页面"]
-    end
+graph TB
+  subgraph L1[表示层 web 前端]
+    Browser[浏览器]
+    NextJS["Next.js<br/>React + HeroUI"]
+  end
 
-    subgraph Pod["id_x_013 Pod（共享 network namespace）"]
-        HAProxy["HAProxy :8080<br/>前后端分流入口"]
+  subgraph L2[网关层 反向代理]
+    HAProxy[HAProxy<br/>/: 前端 /b/id_x_013/: 后端]
+  end
 
-        subgraph WebLayer["前端层"]
-            Web["Next.js :3000<br/>React 19 + HeroUI"]
-        end
+  subgraph L3[接入层 主程序 i-Torch]
+    Granian[Granian ASGI Server]
+    MW[RequestMiddleware<br/>鉴权 / 请求ID]
+    Adapt["src/adapt.py 适配"]
+  end
 
-        subgraph AppLayer["应用层（引擎层 id_x_000 宿主）"]
-            Granian["Granian ASGI"]
-            Litestar["Litestar 应用"]
-            PluginChain["插件链: load_plugin()"]
-            Idx009["id_x_013 插件<br/>controllers → views → models/schemas"]
-        end
+  subgraph L4[插件层 id_x_013 控制器]
+    GQL[Strawberry GraphQL<br/>Query/Mutation]
+  end
 
-        subgraph DataLayer["数据层"]
-            DB["PostgreSQL :5432<br/>users / user_tokens / db_configs"]
-        end
-    end
+  subgraph L5[业务层 视图]
+    Auth[认证视图<br/>登录/注册/重置]
+    Parse[文件解析视图<br/>pandas dtype + 样本]
+    Import[建表导入视图<br/>psycopg2 同步连接]
+  end
 
-    subgraph External["外部依赖"]
-        TargetDB["用户自有 PostgreSQL<br/>建表与导入目标"]
-    end
+  subgraph L6[数据层]
+    BizDB[(业务库<br/>users/db_configs)]
+    TargetDB[(目标库<br/>自定义 PG 实例)]
+  end
 
-    Browser -- "HTTP :8085→:8080" --> HAProxy
-    HAProxy -- "其余路径 → /" --> Web
-    HAProxy -- "/b/id_x_013/ → :8000" --> Granian
-    Granian --> Litestar
-    Litestar --> PluginChain
-    PluginChain --> Idx009
-    Idx009 -- "async select/insert" --> DB
-    Idx009 -- "psycopg2 建表+批量导入" --> TargetDB
+  subgraph L7[外部依赖]
+    Client[用户上传文件<br/>CSV/XLSX/XLS]
+  end
+
+  Browser --> NextJS
+  NextJS -->|HTTP| HAProxy
+  HAProxy -->|/b/id_x_013/*| Granian
+  Granian --> MW
+  MW --> Adapt
+  Adapt --> GQL
+  GQL --> Auth
+  GQL --> Parse
+  GQL --> Import
+  Auth --> BizDB
+  Parse --> Client
+  Import -->|CREATE + INSERT| TargetDB
+  Import -.->|读取连接参数| BizDB
 ```
 
-图1 id_x_013 整体架构（自上至下分层）
+图 5-1 id_x_013 分层架构图
 
 ## 6 请求流转图
 
-以"上传文件并建表导入"一次完整 GraphQL Mutation 为例：
-
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant Browser as 浏览器
-    participant HA as HAProxy :8080
-    participant SV as Service :8000<br/>(Litestar+Granian)
-    participant CTL as Controller<br/>(thin resolver)
-    participant VW as View<br/>(x_views)
-    participant DB1 as 业务库 :5432<br/>(asyncpg)
-    participant DB2 as 目标库<br/>(psycopg2)
+  participant C as Client
+  participant H as HAProxy
+  participant M as Granian + Middleware
+  participant G as GraphQL Controller
+  participant V as View
+  participant Biz as 业务库
+  participant T as 目标库
 
-    Browser->>HA: POST /b/id_x_013/graphql<br/>(createTableAndImport mutation)
-    HA->>SV: 前缀匹配 /b/id_x_013/ 转发
-    SV->>CTL: GraphQL 解析 → resolver
-    CTL->>VW: view_create_table_and_import(input)
+  C->>H: POST /b/id_x_013/graphql (createTableAndImport)
+  H->>M: 路由 /b/* 转发
+  M->>G: 鉴权通过，进入 GraphQL
+  G->>V: view_create_table_and_import(input)
 
-    alt Base64 解码失败
-        VW-->>CTL: CreateTableResultType(success=False)
-    else 文件类型不支持 / 文件为空
-        VW-->>CTL: CreateTableResultType(success=False, rows_imported=0)
+  V->>V: Base64 解码文件
+  alt 解码失败
+    V-->>G: success=false Base64 解码失败
+  else 解码成功
+    V->>V: 按扩展名 pandas 解析
+
+    alt 不支持的类型
+      V-->>G: success=false 仅支持 csv/xlsx/xls
     else 解析成功
-        VW->>VW: pandas.read_csv / read_excel → DataFrame
-        VW->>VW: 构造 CREATE TABLE + COMMENT SQL
-        VW->>DB2: psycopg2.connect(host,port,user,db)
-        alt 连接/建表失败
-            DB2-->>VW: 异常 → rollback
-            VW-->>CTL: success=False
-        else 建表成功
-            VW->>DB2: executemany(INSERT, rows)
-            DB2-->>VW: commit
-            VW-->>CTL: success=True, rows_imported=N
-        end
-    end
+      V->>V: 构造 CREATE TABLE + 字段注释 SQL
+      V->>T: psycopg2.connect(input.host/port/...)
+      T-->>V: 连接对象
 
-    CTL-->>SV: GraphQL 响应
-    SV-->>HA: JSON
-    HA-->>Browser: HTTP 200 + GraphQL payload
+      V->>T: 执行 CREATE TABLE + COMMENT
+      V->>T: executemany 参数化 INSERT
+      T-->>V: 写入结果
+
+      alt 任意步异常
+        V->>T: rollback()
+        V-->>G: success=false message=数据库操作失败 sql=...
+      else 全部成功
+        V->>T: commit()
+        T-->>V: 提交完成
+        V-->>G: success=true rows_imported=N sql=...
+      end
+    end
+  end
+
+  G-->>M: 返回结果
+  M-->>C: 最终响应
 ```
 
-图2 createTableAndImport 请求生命周期
+图 6-1 id_x_013 请求流转图
 
 ## 7 目录结构
 
 ```text
-id_x_013/                     插件根目录
-├── x_plugin.py               插件对外统一入口，实现 PluginInterface 钩子
-├── pyproject.toml            uv 构建配置与元数据
-├── requirements.txt          运行期 Python 依赖
-├── LICENSE                   AGPL-3.0 协议全文
-├── src/                      插件本体源码
+id_x_013/
+├── x_plugin.py                 # 插件入口: load_plugin() 返回插件实例
+├── requirements.txt            # Python 依赖清单
+├── LICENSE                     # AGPL-3.0 许可证
+├── src/
 │   ├── controllers/
-│   │   └── x_controllers.py  GraphQL thin resolver，Query/Mutation 定义
+│   │   └── x_controllers.py    # Strawberry Query/Mutation + register_routers
 │   ├── views/
-│   │   └── x_views.py        业务逻辑层，view_* 函数
+│   │   └── x_views.py          # 业务逻辑: 认证/文件解析/建表导入
 │   ├── models/
-│   │   └── x_models.py       SQLAlchemy ORM 模型与会话工厂
+│   │   └── x_models.py         # SQLAlchemy ORM: User/UserToken/DbConfig 等
 │   └── schemas/
-│       └── x_schemas.py      Strawberry GraphQL 类型与 Input 定义
-├── web/                      Next.js 前端工程
-│   ├── src/
-│   │   ├── app/              Next.js App Router（含 /f 路由）
-│   │   ├── components/       React 组件
-│   │   ├── views/            页面视图
-│   │   ├── context/          全局上下文
-│   │   ├── hooks/            自定义 Hooks
-│   │   ├── layout/           布局组件
-│   │   ├── api/              前端 API 封装
-│   │   └── utils/            工具函数
-│   ├── package.json          前端依赖与脚本
-│   └── Dockerfile            前端镜像构建
-├── ops/                      部署编排
-│   ├── podman-compose.yml    四容器同 Pod 编排
-│   ├── Dockerfile.service    后端服务镜像
-│   ├── haproxy.cfg           流量分流配置
-│   ├── up.sh / down.sh       一键启停脚本
-│   ├── .env.example          环境变量示例
-│   └── init/                 PostgreSQL 初始化脚本
-└── docs/                     文档目录
+│       └── x_schemas.py        # Strawberry 类型: LoginInput/CreateTableInput 等
+├── web/                        # Next.js 前端
+│   ├── package.json            # next 16.2.3 / react 19.2.4 / HeroUI
+│   ├── next.config.ts          # Next.js 配置
+│   ├── tsconfig.json           # TypeScript 配置
+│   ├── Dockerfile              # 前端镜像构建
+│   ├── src/                    # 前端源码
+│   └── public/                 # 静态资源
+├── ops/
+│   ├── podman-compose.yml      # 四容器同 Pod 编排
+│   ├── up.sh / down.sh         # Pod 创建/销毁脚本
+│   ├── Dockerfile.service      # 后端镜像构建
+│   ├── haproxy.cfg             # HAProxy 路由配置
+│   ├── .env.example            # 环境变量模板
+│   └── init/                   # PostgreSQL 初始化脚本
+│       ├── 01_init.sql         # 建库与基础表
+│       └── 02_db_config.sql    # 默认数据库配置行
+└── docs/
+    └── .gitkeep                # 文档目录占位
 ```
 
 ## 8 API 接口文档
 
-项目对外仅暴露一个 GraphQL 端点：`POST /b/id_x_013/graphql`。下表汇总全部 Query/Mutation 操作。
+id_x_013 对外接口由 `register_routers` 统一注册至主程序 `/b/id_x_013` 前缀下，受主程序 `RequestMiddleware` 的 Bearer 鉴权保护（豁免路径除外）。下表汇总主要端点，详细字段以 Strawberry Schema 为准。
 
-表2 GraphQL 操作汇总
+表 8-1 接口汇总
 
-| 类型 | 操作名 | 说明 | 鉴权 |
+| 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| Query | health | 健康检查 | 否 |
-| Query | getDbConfig | 获取默认数据库连接配置 | 是 |
-| Mutation | login | 用户登录，返回令牌 | 否 |
-| Mutation | register | 用户注册（默认未激活） | 否 |
-| Mutation | forgotPassword | 生成密码重置令牌 | 否 |
-| Mutation | logout | 用户登出 | 是 |
-| Mutation | parseFile | 解析上传文件，返回字段信息 | 是 |
-| Mutation | createTableAndImport | 在目标库建表并批量导入 | 是 |
+| POST | `/b/id_x_013/graphql` | Bearer | GraphQL 查询/变更主入口 |
 
-### 8.1 Query
+### 8.1 GraphQL 查询 (Query)
 
-#### 8.1.1 health
+- `health`：健康检查，返回 `{ status: "ok", service: "id_x_013" }`。
+- `getDbConfig`：获取默认数据库连接配置，优先取 `db_configs` 表 `is_default` 行，无默认则回退首行。
 
-健康检查，返回服务状态。
+### 8.2 GraphQL 变更 (Mutation)
 
-入参：无。出参：`HealthType { status, service }`。鉴权：否。
-
-```graphql
-query { health { status service } }
-```
-
-#### 8.1.2 getDbConfig
-
-获取默认或首条数据库连接配置。
-
-入参：无。出参：`DbConfigType { id name host port username password database is_default }`，无记录时返回 `null`。鉴权：是（需携带有效令牌）。
-
-### 8.2 Mutation
-
-#### 8.2.1 login
-
-入参 `LoginInput { email, password }`；出参 `AuthResponseType { success message token expires_at user { id email phone created_at } }`。令牌有效期 24 h。鉴权：否。
-
-#### 8.2.2 register
-
-入参 `RegisterInput { email, password, confirm_password, phone? }`；密码不少于 6 位。注册后 `is_active=False`，需管理员激活。鉴权：否。
-
-#### 8.2.3 forgotPassword
-
-入参 `ForgotPasswordInput { email }`；出参 `ForgotPasswordResponseType { success message reset_token? }`。重置令牌有效期 1 h；生产环境应改为邮件发送而非直接返回。鉴权：否。
-
-#### 8.2.4 logout
-
-入参：无。出参 `AuthResponseType { success message }`。鉴权：是。
-
-#### 8.2.5 parseFile
-
-解析上传的 Excel/CSV 文件并返回字段信息。
-
-入参：`file_data: String`（Base64 编码内容）、`filename: String`（用于判断扩展名）。
-出参：`FileUploadResultType { success message fields { name dtype sample_values } }`。
-异常：Base64 解码失败、不支持的文件类型、文件为空均以 `success=False` 返回。鉴权：是。
-
-```graphql
-mutation {
-  parseFile(fileData: "<BASE64_DATA>", filename: "demo.xlsx") {
-    success
-    message
-    fields { name dtype sampleValues }
-  }
-}
-```
-
-#### 8.2.6 createTableAndImport
-
-在用户提供的 PostgreSQL 数据库中建表并批量导入数据。
-
-入参 `CreateTableInput { table_name, table_comment?, fields { name dtype comment? }, host, port, username, password, database, file_data, filename }`。
-出参 `CreateTableResultType { success message sql rows_imported }`。
-
-字段说明：
-
-- `fields[].dtype` 取 PostgreSQL 类型，如 `INTEGER` / `TEXT`，内部会 `upper()`。
-- `file_data` 为 Base64 编码的原始文件内容。
-- 建表语句为 `CREATE TABLE IF NOT EXISTS`；数据以参数化 `executemany` 写入。
-- 任一步骤失败则 `success=False` 且 `rows_imported=0`，建表失败会触发 `rollback`。
-
-鉴权：是。
+- `login(input: LoginInput!)`：用户登录，校验密码哈希后签发令牌入库 `user_tokens`，24 小时过期，返回 `AuthResponseType`。
+- `register(input: RegisterInput!)`：用户注册，两次密码一致性校验，邮箱去重，默认 `is_active=False` 待管理员激活。
+- `forgotPassword(input: ForgotPasswordInput!)`：忘记密码，旧令牌置 `used=True` 后签发 1 小时令牌。
+- `logout`：登出，返回成功响应。
+- `parseFile(fileData: String!, filename: String!)`：解析上传文件，Base64 解码后按扩展名分流至 pandas，返回字段名称/dtype/前 3 行样本，仅接受 `.csv`/`.xlsx`/`.xls`。
+- `createTableAndImport(input: CreateTableInput!)`：在目标 PostgreSQL 实例建表并导入数据。`CreateTableInput` 含 `table_name`、`table_comment`、`fields`（每字段含 `name`/`dtype`/`comment`）、目标库连接五参、`file_data`（Base64 编码文件）、`filename`。返回 `CreateTableResultType{ success, message, sql, rows_imported }`。
 
 ### 8.3 调用示例
 
-以下示例中需替换 `<BASE_URL>`（如 `http://127.0.0.1:8085`）、`<TOKEN>`（登录返回的令牌）、`<BASE64_DATA>`（文件 Base64 内容）。
-
-登录取令牌：
+以下示例需替换占位符 `<BASE_URL>`、`<TOKEN>`、`<DB_HOST>` 等。
 
 ```bash
-curl -X POST '<BASE_URL>/b/id_x_013/graphql' \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"mutation($i:LoginInput!){login(input:$i){success token user{id email}}}", \
-       "variables":{"i":{"email":"a@b.com","password":"123456"}}}'
+# 健康检查
+curl -X POST "<BASE_URL>/b/id_x_013/graphql" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{ "query": "{ health { status service } }" }'
+
+# 解析文件（file_data 需先 Base64 编码）
+curl -X POST "<BASE_URL>/b/id_x_013/graphql" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation($f: String!, $n: String!) { parseFile(fileData: $f, filename: $n) { success message fields { name dtype sampleValues } } }",
+    "variables": { "f": "<BASE64_DATA>", "n": "sample.xlsx" }
+  }'
+
+# 建表并导入
+curl -X POST "<BASE_URL>/b/id_x_013/graphql" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation($i: CreateTableInput!) { createTableAndImport(input: $i) { success message sql rowsImported } }",
+    "variables": {
+      "i": {
+        "tableName": "experiment_01",
+        "tableComment": "实验一批次数据",
+        "fields": [
+          { "name": "id", "dtype": "INTEGER", "comment": "记录编号" },
+          { "name": "value", "dtype": "REAL", "comment": "测量值" }
+        ],
+        "host": "<DB_HOST>",
+        "port": 5432,
+        "username": "<DB_USER>",
+        "password": "<DB_PASSWORD>",
+        "database": "<DB_NAME>",
+        "fileData": "<BASE64_DATA>",
+        "filename": "sample.csv"
+      }
+    }
+  }'
 ```
 
-携带令牌解析文件：
+未携带合法 Bearer Token 时由主程序中间件返回：
 
-```bash
-curl -X POST '<BASE_URL>/b/id_x_013/graphql' \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer <TOKEN>' \
-  -d '{"query":"mutation($d:String!,$f:String!){parseFile(fileData:$d,filename:$f){success fields{name dtype}}}", \
-       "variables":{"d":"<BASE64_DATA>","f":"demo.csv"}}'
+```json
+{"error": "Unauthorized access", "code": 401}
 ```
+
+请求体大小上限由主程序 `[BASE].MAX_REQUEST_BODY_SIZE` 控制，默认 1 073 741 824 字节（1 GiB），满足 Base64 编码大文件上传需求。
 
 ## 9 快速部署
 
 ### 9.1 环境准备
 
-- Python >= 3.10（后端运行期）
-- Node >= 24.0（前端构建，仅本地开发需要）
-- PostgreSQL 18（业务库）
-- Podman >= 4.0 与 podman-compose（容器编排，推荐方式）
-- 宿主机端口 8085 空闲
+- Python ≥ 3.10（推荐 3.10）
+- Node.js ≥ 24（前端构建，Next.js 16 建议 Node 24+）
+- PostgreSQL ≥ 14（业务库，已默认采用 18）
+- 主程序 i-Torch（id_x_000）已就绪
+- Podman 与 podman-compose（容器化部署）
 
 ### 9.2 安装
 
-后端依赖（在仓库根 id_x_000 上下文）：
-
 ```bash
+# 在主程序 x_models/ 下放置插件
+cp -r id_x_013 <ID_X_000>/x_models/
+
+# 安装 Python 依赖（建议使用主程序虚拟环境）
 pip install -r x_models/id_x_013/requirements.txt
-```
 
-前端依赖：
-
-```bash
+# 前端依赖
 cd x_models/id_x_013/web
-npm install
+cnpm install
 ```
 
-### 9.3 运行
+在主程序 `config/base_config.toml` 注册插件：
 
-后端由引擎层 `main.py` 启动（Granian 托管 `main:obj`，监听 8000）：
+```toml
+[EXTEND]
+MODELS = [
+    ["id_x_013", "/id_x_013"],
+]
+```
+
+### 9.3 配置
+
+业务库初始化由 `ops/init/01_init.sql` 自动执行，如手动初始化：
 
 ```bash
+psql -h 127.0.0.1 -p 5432 -U postgres \
+  -f x_models/id_x_013/ops/init/01_init.sql
+```
+
+复制环境变量模板并填入凭据：
+
+```bash
+cp x_models/id_x_013/ops/.env.example x_models/id_x_013/ops/.env
+# 编辑 .env，填入 POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD 等
+```
+
+前端环境变量写入 `web/.env.local`，至少包含 `NEXT_PUBLIC_BASE_URL` 与 `NEXT_PUBLIC_SUB_VERSION`。
+
+### 9.4 运行
+
+```bash
+# 启动后端（在主程序根目录）
 python main.py
-```
 
-前端开发模式（监听 3000）：
-
-```bash
+# 启动前端
 cd x_models/id_x_013/web
-npm run dev
+cnpm run dev      # 开发模式，默认 3000 端口
+# 或
+cnpm run build && cnpm run start   # 生产模式
 ```
 
-### 9.4 容器部署
+后端默认监听主程序配置端口（如 `0.0.0.0:8000`），前端 Next.js 默认监听 `3000`。生产环境通过 HAProxy 将 `/b/id_x_013/*` 路由到后端、其余路由到前端，配置见 `ops/haproxy.cfg`。
 
-推荐使用 Podman 同 Pod 四容器部署，一条脚本完成构建与启动：
+### 9.5 容器部署
+
+项目内置 Podman 四容器同 Pod 编排，部署命令如下：
 
 ```bash
 cd x_models/id_x_013/ops
-cp .env.example .env          # 务必修改 POSTGRES_PASSWORD
-./up.sh                       # 首次或镜像不存在时自动构建
-```
 
-`up.sh` 会依次：构建 service / web 镜像、创建 Pod（端口 8085:8080）、创建数据卷、按序启动 db → service → web → haproxy 并等待 db 健康检查通过。
+# 创建 Pod 并启动四容器（数据库 / 服务 / 前端 / 反向代理）
+./up.sh
+# 等价于：
+# podman pod create --name id_x_013 -p 8085:8080
+# podman-compose -f podman-compose.yml up -d --build
 
-停止与清理：
+# 查看状态
+podman pod ps
+podman logs -f id_x_013-haproxy
 
-```bash
-cd x_models/id_x_013/ops
+# 销毁 Pod 与容器
 ./down.sh
 ```
 
-或使用 podman-compose：
+宿主机访问 `http://<HOST>:8085` 即可，HAProxy 监听 Pod 内 `:8080`，经 Pod 端口映射暴露到宿主机 `8085`。若使用 Kubernetes，可参考以下方式部署：
 
 ```bash
-cd x_models/id_x_013/ops
-podman pod create --name id_x_013 -p 8085:8080   # 首次创建 Pod
-podman compose up -d --build
+kubectl apply -f ops/deployment.yaml
+kubectl rollout status deployment/id_x_013
 ```
 
-部署完成后访问 `http://<HOST>:8085`，前端页面默认重定向至登录页；GraphQL 端点位于 `http://<HOST>:8085/b/id_x_013/graphql`。如需 Kubernetes 部署，可将上述四容器以同一 Pod 模板迁移至 K8s，并用 `kubectl apply -f` 提交。
+部署清单需自行补全数据库连接 Secret、持久卷挂载与 `.env` 的 ConfigMap 映射。
+
+---
+
+## 参考文献
+
+- [1] Strawberry GraphQL. Strawberry Framework Documentation[EB/OL]. https://strawberry.rocks, 2025.
+- [2] Litestar Project. Litestar Framework Documentation[EB/OL]. https://docs.litestar.dev, 2025.
+- [3] pandas development team. pandas Documentation[EB/OL]. https://pandas.pydata.org/docs, 2025.
+- [4] Vercel. Next.js Documentation[EB/OL]. https://nextjs.org/docs, 2025.
+- [5] PostgreSQL Global Development Group. PostgreSQL Documentation[EB/OL]. https://www.postgresql.org/docs, 2025.
