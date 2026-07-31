@@ -1,0 +1,99 @@
+name: id_x_013
+
+# ============================================================================
+# 四容器同 Pod 部署：db / service / web / haproxy
+#
+#   - 同一 Pod 的容器共享 network namespace，彼此通过 127.0.0.1 互访
+#   - 仅 haproxy 通过 Pod 端口映射暴露到宿主机：宿主机 8085 -> Pod 8080
+#   - 路由：
+#         /b/id_x_013/   ->  service:8000   (Litestar + GraphQL)
+#         其余           ->  web:3000       (Next.js)
+#
+#   Pod 需预先创建（参考 up.sh / down.sh）：
+#     podman pod create --name id_x_013 -p 8085:8080
+# ============================================================================
+
+services:
+  db:
+    image: postgres:18
+    container_name: id_x_013-db
+    pod: id_x_013
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-id_x_013}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-P@sspostgres!}
+    volumes:
+      - id_x_013_db:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  service:
+    build:
+      # 构建上下文为 id_x_000 仓库根，Dockerfile.service 内按需 COPY
+      context: ../../../
+      dockerfile: x_models/id_x_013/ops/Dockerfile.service
+    image: id_x_013-service
+    container_name: id_x_013-service
+    pod: id_x_013
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_NAME: ${POSTGRES_DB:-id_x_013}
+      # 同 Pod 共享网络，db/service/web/haproxy 均在 127.0.0.1
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-P@sspostgres!}
+      # 强制注入容器内真实工作目录，避免 tomllib 中宿主机字面路径被使用
+      PROJECT_PATH: /app/id_x_000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./.env:/app/id_x_000/.env:ro
+      - ../logs:/app/id_x_000/logs
+    healthcheck:
+      # GraphQL 端点对 GET 返回 400（期望 POST），这里只要 TCP/HTTP 有响应即视为存活
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8000/b/id_x_013/graphql || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+      args:
+        # 浏览器端用相对路径，由 haproxy 转发到 service
+        NEXT_PUBLIC_BASE_URL: ""
+        NEXT_PUBLIC_SUB_VERSION: /b/id_x_013/graphql
+    image: id_x_013-web
+    container_name: id_x_013-web
+    pod: id_x_013
+    restart: unless-stopped
+    depends_on:
+      service:
+        condition: service_started
+
+  haproxy:
+    image: haproxy:3.0
+    container_name: id_x_013-haproxy
+    pod: id_x_013
+    restart: unless-stopped
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - web
+      - service
+
+volumes:
+  id_x_013_db:
+    name: id_x_013_db

@@ -1,0 +1,13 @@
+toml
+python-dotenv
+granian
+litestar[all]
+tomli
+advanced_alchemy
+asyncpg
+aiohttp
+pydantic
+strawberry-graphql
+psycopg2
+openpyxl
+pandas

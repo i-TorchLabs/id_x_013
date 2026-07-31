@@ -1,0 +1,24 @@
+# 构建上下文过滤：避免把本地 node_modules / .next 等打进 web 镜像构建上下文。
+
+**/node_modules
+**/.next
+**/out
+**/build
+**/coverage
+
+# 本地调试产物与缓存
+**/.DS_Store
+**/*.pem
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.vercel
+
+# 类型构建缓存
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# 编辑器
+**/.vscode
+**/.idea
+**/*.swp
