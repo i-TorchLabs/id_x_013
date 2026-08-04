@@ -2,18 +2,18 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# 停止并删除容器（顺序与启动相反）
-for name in id_x_013-haproxy id_x_013-web id_x_013-service id_x_013-db; do
+# 项目名称（取自上级目录名，与项目同名）
+PROJECT_NAME=$(basename "$(dirname "$(pwd)")")
+
+# ============================================
+# 仅停止 Pod 中的容器（顺序与启动相反）
+# 保留 Pod / 容器 / 数据卷 / 镜像，便于后续重启
+# ============================================
+for name in "${PROJECT_NAME}-haproxy" "${PROJECT_NAME}-web" "${PROJECT_NAME}-service" "${PROJECT_NAME}-db"; do
   if podman container exists "$name"; then
-    podman rm -f "$name"
-    echo "[down] $name 已删除"
+    podman stop "$name" >/dev/null || true
+    echo "[down] $name 已停止"
   fi
 done
-
-# 删除 Pod
-if podman pod exists id_x_013; then
-  podman pod rm -f id_x_013
-  echo "[down] Pod id_x_013 已删除"
-fi
 
 echo "[down] 所有服务已停止"
