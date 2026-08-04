@@ -17,7 +17,10 @@ if [ "${1:-}" = "--build" ] || ! podman image exists id_x_013-service || ! podma
   echo "[up] 构建 service 镜像..."
   podman build -t id_x_013-service -f Dockerfile.service ../../../
   echo "[up] 构建 web 镜像..."
-  podman build -t id_x_013-web -f ../web/Dockerfile ../web
+  podman build -t id_x_013-web -f ../web/Dockerfile \
+    --build-arg NEXT_PUBLIC_BASE_URL="" \
+    --build-arg NEXT_PUBLIC_SUB_VERSION="/b/id_x_013/graphql" \
+    ../web
 fi
 
 # ============================================
@@ -38,7 +41,7 @@ if ! podman volume exists id_x_013_db; then
 fi
 
 # ============================================
-# 4. 启动容器（已运行则跳过）
+# 4. 启动容器（已存在则跳过）
 # ============================================
 
 # -- db --
@@ -57,7 +60,7 @@ if ! podman container exists id_x_013-db; then
     --health-timeout 5s \
     --health-retries 10 \
     --health-start-period 20s \
-    postgres:18
+    docker.io/library/postgres:18
   echo "[up] id_x_013-db 已启动"
 else
   echo "[up] id_x_013-db 已存在，跳过"
@@ -89,9 +92,9 @@ if ! podman container exists id_x_013-service; then
     -e DB_PORT=5432 \
     -e DB_USERNAME="${POSTGRES_USER:-postgres}" \
     -e DB_PASSWORD="${POSTGRES_PASSWORD:-P@sspostgres!}" \
-    -e PROJECT_PATH=/app/id_x_000 \
-    -v ./.env:/app/id_x_000/.env:ro \
-    -v ../logs:/app/id_x_000/logs \
+    -e PROJECT_PATH=/app/i-Torch \
+    -v ./.env:/app/i-Torch/.env:ro \
+    -v ../logs:/app/i-Torch/logs \
     --health-cmd "curl -s -o /dev/null http://127.0.0.1:7000/b/id_x_013/graphql || exit 1" \
     --health-interval 15s \
     --health-timeout 5s \
@@ -122,7 +125,7 @@ if ! podman container exists id_x_013-haproxy; then
     --name id_x_013-haproxy \
     --restart unless-stopped \
     -v ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro \
-    haproxy:3.0
+    docker.io/library/haproxy:3.0
   echo "[up] id_x_013-haproxy 已启动"
 else
   echo "[up] id_x_013-haproxy 已存在，跳过"
@@ -130,3 +133,4 @@ fi
 
 echo "[up] 所有服务已启动"
 podman pod ls --filter name=id_x_013
+podman ps --filter pod=id_x_013 --format "table {{.Names}}\t{{.Status}}"

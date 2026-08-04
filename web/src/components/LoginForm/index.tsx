@@ -80,7 +80,7 @@ export default function LoginForm({
             color: textPrimary,
           }}
         >
-          Welcome back
+          Welcome to TorchLabs
         </h1>
         <p
           className="text-[15px]"
@@ -91,7 +91,7 @@ export default function LoginForm({
             color: textTertiary,
           }}
         >
-          Sign in to your DataForge workspace
+          id_x_013: DataForge
         </p>
       </div>
 

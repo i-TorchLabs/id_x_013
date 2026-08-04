@@ -20,7 +20,7 @@
 
 **Slogan**：面向科研数据资产的 Excel/CSV 解析与 PostgreSQL 自动建表导入插件。
 
-id_x_013 是 TorchLabs/i-Torch（id_x_000）主程序的业务插件，定位为「上传即入库」的数据导入工作台。插件通过插件接口（Plugin Interface）契约挂载到主程序，对外暴露图查询语言（Graph Query Language, GraphQL）端点，对内遵循「控制器薄转发 → 视图承载业务 → 模型固化数据 → 模式声明契约」四层分层，覆盖用户登录、文件解析、目标库连接、自动建表、批量导入与表/字段注释生成的完整链路。
+id_x_013 是 TorchLabs/i-Torch 主程序的业务插件，定位为「上传即入库」的数据导入工作台。插件通过插件接口（Plugin Interface）契约挂载到主程序，对外暴露图查询语言（Graph Query Language, GraphQL）端点，对内遵循「控制器薄转发 → 视图承载业务 → 模型固化数据 → 模式声明契约」四层分层，覆盖用户登录、文件解析、目标库连接、自动建表、批量导入与表/字段注释生成的完整链路。
 
 针对科研数据汇集中的「Excel/CSV 字段人工建表烦琐、字段类型易错、导入脚本难复用、多目标库无统一入口」等痛点，id_x_013 以 pandas 推断字段样本、用户自定义 PostgreSQL 类型、参数化 `executemany` 批量写入、单事务回滚给出可复现方案，相较手工 `COPY` 或独立脚本式方案具备更强的字段校验闭环与目标库可插拔能力，适用于实验数据归档、问卷批次入库、多库归集等场景。
 
@@ -289,7 +289,7 @@ curl -X POST "<BASE_URL>/b/id_x_013/graphql" \
 - Python ≥ 3.10（推荐 3.10）
 - Node.js ≥ 24（前端构建，Next.js 16 建议 Node 24+）
 - PostgreSQL ≥ 14（业务库，已默认采用 18）
-- 主程序 i-Torch（id_x_000）已就绪
+- 主程序 i-Torch 已就绪
 - Podman 与 podman-compose（容器化部署）
 
 ### 9.2 安装

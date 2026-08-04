@@ -11,13 +11,22 @@ FROM node:24-alpine AS build
 
 WORKDIR /app
 
-# 先安装 cnpm，再通过 cnpm 安装依赖
+# 声明构建参数（由 podman-compose.yml 的 build.args 注入）
+# Next.js 在构建时把 NEXT_PUBLIC_* 内联到客户端 bundle，必须在此设置
+ARG NEXT_PUBLIC_BASE_URL
+ARG NEXT_PUBLIC_SUB_VERSION
+
+# 安装依赖（用 npm 扁平化 node_modules，自动解析 @heroui/react 的 peer dep；
+# npmmirror 镜像源保持国内构建速度）
 COPY package.json ./
-RUN npm install -g cnpm --registry=https://registry.npmmirror.com \
-    && cnpm install --registry=https://registry.npmmirror.com
+RUN npm install --registry=https://registry.npmmirror.com
 
 # 再拷贝源码（含 .env.local，Next.js 构建时自动加载 NEXT_PUBLIC_* 变量）
 COPY . .
+
+# 显式导出 ARG 为 ENV，确保 Next.js 构建期一定能拿到（.env.local 优先级低于环境变量）
+ENV NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL} \
+    NEXT_PUBLIC_SUB_VERSION=${NEXT_PUBLIC_SUB_VERSION}
 
 RUN npm run build
 

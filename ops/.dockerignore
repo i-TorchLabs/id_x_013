@@ -1,11 +1,11 @@
 # 构建上下文过滤：避免把运行时数据、缓存、secrets、其他插件打进 service 镜像。
 #
 # 作用域说明：Podman/Docker 只读取「构建上下文根目录」下的 .dockerignore。
-# 在 podman-compose.yml 中，service 的 build.context 是 id_x_000 仓库根，
+# 在 podman-compose.yml 中，service 的 build.context 是 i-Torch 仓库根，
 # 因此本文件（在 ops/ 下）在 `podman compose up --build` 时不会被自动读取。
 #
 # Dockerfile.service 已改为按需 COPY（main.py / src / utils / config /
-# x_models/_contracts / x_models/id_x_013 / x_models/id_x_002_c2），不再 COPY .，
+# x_models/_contracts / x_models/id_x_013），不再 COPY .，
 # 因此其他插件目录不会被复制进镜像。本文件主要用于：
 #   1. 手动构建时显式指定：podman build --ignorefile ops/.dockerignore
 #      -f ops/Dockerfile.service .. ← 进一步压缩 context 上传体积
@@ -34,15 +34,9 @@ runtime/
 local-storage/
 logs/
 x_models/id_x_013/uploads/
-x_models/id_x_002_c2/uploads/
-x_models/id_x_002_c2/storage/
-x_models/id_x_002_c2/logs/
 
 # 其他业务插件（id_x_013 镜像只服务 id_x_013，不牵扯其他插件；
-# 但 utils/database_cli_util.py 硬编码 import id_x_002_c2 源码，故 id_x_002_c2
-# 的源码会被 COPY，仅排除其运行时数据目录）
-x_models/id_x_002_esg/
-x_models/id_x_028/
+# Dockerfile.service 按需 COPY，不会包含下列目录）
 
 # 与运行无关的仓库目录
 docs/
