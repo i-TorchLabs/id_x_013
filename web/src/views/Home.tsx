@@ -183,25 +183,20 @@ export default function Home() {
                 marginBottom: "20px",
               }}
             >
-              <motion.span
+              <motion.img
+                src="/favicon.ico"
+                alt="data-forge"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.15, duration: 0.5, ease }}
                 className="inline-block"
                 style={{
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: accent,
-                  background: t.badgeBg,
-                  padding: "5px 14px",
-                  borderRadius: "980px",
+                  width: "48px",
+                  height: "48px",
+                  borderRadius: "12px",
                   marginBottom: "18px",
                 }}
-              >
-                Data Pipeline
-              </motion.span>
+              />
               <h1 style={{ fontFamily: SF, fontSize: "52px", fontWeight: 600, lineHeight: 1.05, letterSpacing: "-0.52px", color: fg, margin: 0 }}>Data Forge</h1>
               <motion.p
                 initial={{ opacity: 0 }}
@@ -554,14 +549,63 @@ export default function Home() {
           <Modal.Container placement="center" size="sm">
             <Modal.Dialog>
               <Modal.Header>
-                <Modal.Heading style={{ fontFamily: SF, fontSize: "17px", color: fg, letterSpacing: "-0.374px" }}>Sign Out</Modal.Heading>
+                <div className="flex items-center gap-3.5">
+                  <span
+                    className="inline-flex items-center justify-center rounded-2xl shrink-0"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      background: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.06)",
+                      color: fg,
+                    }}
+                  >
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <path d="M16 17l5-5-5-5" />
+                      <path d="M21 12H9" />
+                    </svg>
+                  </span>
+                  <Modal.Heading style={{ fontFamily: SF, fontSize: "18px", fontWeight: 600, color: fg, letterSpacing: "-0.4px", margin: 0 }}>Sign Out</Modal.Heading>
+                </div>
               </Modal.Header>
               <Modal.Body>
-                <p style={{ fontFamily: SFT, color: fg2, fontSize: "15px", letterSpacing: "-0.24px", margin: 0 }}>Are you sure you want to sign out?</p>
+                <p style={{ fontFamily: SFT, color: fg2, fontSize: "14px", lineHeight: 1.5, letterSpacing: "-0.24px", margin: 0 }}>
+                  You'll be returned to the login screen. You can sign back in anytime.
+                </p>
               </Modal.Body>
               <Modal.Footer>
-                <Button variant="secondary" onPress={() => setShowLogoutConfirm(false)} style={{ fontFamily: SFT, background: accent, color: accentFg, borderRadius: "980px", border: "none", fontSize: "15px" }}>Cancel</Button>
-                <Button variant="primary" onPress={handleLogout} style={{ fontFamily: SFT, background: accent, color: accentFg, borderRadius: "980px", border: "none", fontSize: "15px" }}>Sign Out</Button>
+                <Button
+                  variant="secondary"
+                  onPress={() => setShowLogoutConfirm(false)}
+                  style={{
+                    fontFamily: SFT,
+                    background: "transparent",
+                    color: fg,
+                    borderRadius: "980px",
+                    border: `1px solid ${divider}`,
+                    fontSize: "15px",
+                    fontWeight: 500,
+                    padding: "10px 22px",
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onPress={handleLogout}
+                  style={{
+                    fontFamily: SFT,
+                    background: accent,
+                    color: accentFg,
+                    borderRadius: "980px",
+                    border: "none",
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    padding: "10px 22px",
+                  }}
+                >
+                  Sign Out
+                </Button>
               </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>

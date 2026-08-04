@@ -6,14 +6,27 @@ cd "$(dirname "$0")"
 PROJECT_NAME=$(basename "$(dirname "$(pwd)")")
 
 # ============================================
-# 仅停止 Pod 中的容器（顺序与启动相反）
-# 保留 Pod / 容器 / 数据卷 / 镜像，便于后续重启
+# 1. 移除容器（顺序与启动相反）
 # ============================================
 for name in "${PROJECT_NAME}-haproxy" "${PROJECT_NAME}-web" "${PROJECT_NAME}-service" "${PROJECT_NAME}-db"; do
   if podman container exists "$name"; then
-    podman stop "$name" >/dev/null || true
-    echo "[down] $name 已停止"
+    podman rm -f "$name" >/dev/null
+    echo "[down] 容器 $name 已移除"
   fi
 done
 
-echo "[down] 所有服务已停止"
+# ============================================
+# 2. 删除本项目构建的镜像
+#    官方镜像（postgres / haproxy）为共享依赖，保留
+# ============================================
+for image in "${PROJECT_NAME}-service" "${PROJECT_NAME}-web"; do
+  if podman image exists "$image"; then
+    if podman rmi "$image" >/dev/null 2>&1; then
+      echo "[down] 镜像 $image 已删除"
+    else
+      echo "[down] 镜像 $image 删除失败（可能仍被引用）"
+    fi
+  fi
+done
+
+echo "[down] 容器已移除，镜像已删除"
