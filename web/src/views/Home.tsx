@@ -135,8 +135,8 @@ export default function Home() {
         style={{ background: navBg, backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", borderBottom: `0.5px solid ${divider}` }}>
         <div className="flex items-center gap-2.5" style={{ marginLeft: "27px" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/favicon.ico" alt="id_x_013 logo" style={{ width: 22, height: 22 }} />
-          <span style={{ fontFamily: SF, fontSize: "17px", fontWeight: 600, color: fg, letterSpacing: "-0.374px" }}>id_x_013</span>
+          <img src="/favicon.ico" alt="Data Forge logo" style={{ width: 22, height: 22 }} />
+          <span style={{ fontFamily: SF, fontSize: "17px", fontWeight: 600, color: fg, letterSpacing: "-0.374px" }}>Data Forge</span>
         </div>
         <div className="flex items-center gap-4" style={{ padding: "0 27px" }}>
           <ThemeToggle />

@@ -80,7 +80,7 @@ export default function RegisterForm({
   });
 
   return (
-    <div className="w-full max-w-[400px]">
+    <div className="w-full max-w-100">
       {/* Logo */}
       <div className="flex justify-center mb-10">
         <div
@@ -119,7 +119,7 @@ export default function RegisterForm({
             color: textTertiary,
           }}
         >
-          Get started with your DataForge workspace
+          Get started with your Data Forge workspace
         </p>
       </div>
 

@@ -82,10 +82,10 @@ export default function LeftPanel({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/favicon.ico"
-          alt="id_x_013 logo"
-          className="w-7 h-7"
+          alt="Data Forge logo"
+          className="w-7 h-7 block"
         />
-        <span className="text-base font-semibold text-white">id_x_013</span>
+        <span className="text-base font-semibold text-white leading-none">Data Forge</span>
       </div>
 
       {/* Animated Characters */}

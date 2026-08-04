@@ -46,7 +46,7 @@ export default function LoginForm({
   const { fg: textPrimary, fg2: textSecondary, fg3: textTertiary, accent, accentFg, error, inputBg, inputBorder, iconContainerBg, errorBg, errorBorder } = t;
 
   return (
-    <div className="w-full max-w-[400px]">
+    <div className="w-full max-w-100">
       {/* Logo */}
       <div className="flex justify-center mb-10">
         <div
@@ -80,7 +80,7 @@ export default function LoginForm({
             color: textPrimary,
           }}
         >
-          Welcome to TorchLabs
+          Welcome to SME AI Labs
         </h1>
         <p
           className="text-[15px]"
@@ -91,7 +91,7 @@ export default function LoginForm({
             color: textTertiary,
           }}
         >
-          id_x_013: DataForge
+          Sign in your Data Forge workspace
         </p>
       </div>
 
