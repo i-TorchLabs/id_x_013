@@ -3,7 +3,7 @@ import { Providers } from "@/layout/Providers";
 import "@/assets/styles/globals.css";
 
 export const metadata: Metadata = {
-    title: "id_x_013",
+    title: "TorchLabs",
     description:
         "Upload Excel/CSV files, parse data, and create database tables with ease.",
     icons: {

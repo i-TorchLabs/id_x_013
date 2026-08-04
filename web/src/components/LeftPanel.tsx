@@ -82,10 +82,10 @@ export default function LeftPanel({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/favicon.ico"
-          alt="id_x_013 logo"
+          alt="TorchLabs logo"
           className="w-7 h-7"
         />
-        <span className="text-base font-semibold text-white">id_x_013</span>
+        <span className="text-base font-semibold text-white">TorchLabs</span>
       </div>
 
       {/* Animated Characters */}
