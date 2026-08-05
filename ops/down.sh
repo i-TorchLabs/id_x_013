@@ -16,7 +16,15 @@ for name in "${PROJECT_NAME}-haproxy" "${PROJECT_NAME}-web" "${PROJECT_NAME}-ser
 done
 
 # ============================================
-# 2. 删除本项目构建的镜像
+# 2. 删除 Pod
+# ============================================
+if podman pod exists "${PROJECT_NAME}"; then
+  podman pod rm -f "${PROJECT_NAME}"
+  echo "[down] Pod ${PROJECT_NAME} 已删除"
+fi
+
+# ============================================
+# 3. 删除本项目构建的镜像
 #    官方镜像（postgres / haproxy）为共享依赖，保留
 # ============================================
 for image in "${PROJECT_NAME}-service" "${PROJECT_NAME}-web"; do
@@ -29,4 +37,4 @@ for image in "${PROJECT_NAME}-service" "${PROJECT_NAME}-web"; do
   fi
 done
 
-echo "[down] 容器已移除，镜像已删除"
+echo "[down] 容器已移除，Pod 已删除，镜像已删除"

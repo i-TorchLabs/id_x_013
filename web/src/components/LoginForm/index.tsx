@@ -80,7 +80,7 @@ export default function LoginForm({
             color: textPrimary,
           }}
         >
-          Welcome to SME AI Labs
+          Welcome to SME AI Lab
         </h1>
         <p
           className="text-[15px]"

@@ -3,7 +3,7 @@ import { Providers } from "@/layout/Providers";
 import "@/assets/styles/globals.css";
 
 export const metadata: Metadata = {
-    title: "SME AI Labs",
+    title: "SME AI Lab",
     description:
         "Upload Excel/CSV files, parse data, and create database tables with ease.",
     icons: {

@@ -28,11 +28,11 @@ fi
 
 # ============================================
 # 2. 创建 Pod（已存在则跳过）
-#    haproxy:8080 -> pod:8080 -> 宿主机:8085
+#    haproxy:8080 -> pod:8080 -> 宿主机:8013
 # ============================================
 if ! podman pod exists "${PROJECT_NAME}"; then
-  podman pod create --name "${PROJECT_NAME}" -p 8085:8080
-  echo "[up] Pod ${PROJECT_NAME} 已创建，端口映射 8085:8080"
+  podman pod create --name "${PROJECT_NAME}" -p 8013:8080
+  echo "[up] Pod ${PROJECT_NAME} 已创建，端口映射 8013:8080"
 fi
 
 # ============================================
