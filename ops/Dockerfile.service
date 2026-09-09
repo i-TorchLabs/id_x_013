@@ -1,6 +1,6 @@
-# id_x_013 后端服务镜像（Litestar + Granian，引擎层 i-Torch 作为 ASGI 宿主）。
+# id_x_013 后端服务镜像（Litestar + Granian，引擎层 i-Core 作为 ASGI 宿主）。
 #
-# 构建上下文必须是 i-Torch 仓库根，这样引擎层（main.py / src / utils / config）
+# 构建上下文必须是 i-Core 仓库根，这样引擎层（main.py / src / utils / config）
 # 与业务插件（x_models/id_x_013）能被一并复制进镜像，保持原有相对 import
 # 与 config 解析（utils/config_parse_util.py 按 __file__ 定位 config/）。
 #
@@ -14,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TZ=Asia/Shanghai
 
-WORKDIR /app/i-Torch
+WORKDIR /app/i-Core
 
 # 系统依赖：
 #   build-essential  编译 psycopg2 wheel
@@ -35,15 +35,15 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 #   main.py / src / utils / config    引擎层与配置
 #   x_models/_contracts               插件契约公共包（id_x_013 的 x_plugin.py 依赖）
 #   x_models/id_x_013                 业务插件本体
-COPY main.py /app/i-Torch/main.py
-COPY src /app/i-Torch/src
-COPY utils /app/i-Torch/utils
-COPY config /app/i-Torch/config
-COPY x_models/_contracts /app/i-Torch/x_models/_contracts
-COPY x_models/id_x_013 /app/i-Torch/x_models/id_x_013
+COPY main.py /app/i-Core/main.py
+COPY src /app/i-Core/src
+COPY utils /app/i-Core/utils
+COPY config /app/i-Core/config
+COPY x_models/_contracts /app/i-Core/x_models/_contracts
+COPY x_models/id_x_013 /app/i-Core/x_models/id_x_013
 
 # 运行时目录（logs 由 compose 挂卷持久化）
-RUN mkdir -p /app/i-Torch/logs
+RUN mkdir -p /app/i-Core/logs
 
 EXPOSE 7000
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from x_models._contracts import PluginInterface
 
 
-class _Idx009Plugin:
+class _Idx013Plugin:
     """id_x_013 插件实现。
 
     懒加载内部 ``x_models`` 模块，避免主程序加载本插件时立即触发
@@ -28,7 +28,7 @@ class _Idx009Plugin:
 
     @property
     def required_extensions(self) -> tuple[str, ...]:
-        # 009 模型表仅用基础类型，不依赖 pgcrypto / pgvector。
+        # 013 模型表仅用基础类型，不依赖 pgcrypto / pgvector。
         return ()
 
     def set_session_maker(self, maker: async_sessionmaker[AsyncSession]) -> None:
@@ -41,4 +41,4 @@ class _Idx009Plugin:
 
 def load_plugin() -> PluginInterface:
     """返回 id_x_013 插件实例。"""
-    return _Idx009Plugin()
+    return _Idx013Plugin()

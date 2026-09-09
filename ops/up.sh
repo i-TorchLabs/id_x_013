@@ -25,11 +25,11 @@ fi
 
 # ============================================
 # 2. 创建 Pod（已存在则跳过）
-#    haproxy:8080 -> pod:8080 -> 宿主机:8085
+#    haproxy:8080 -> pod:8080 -> 宿主机:8013
 # ============================================
 if ! podman pod exists id_x_013; then
-  podman pod create --name id_x_013 -p 8085:8080
-  echo "[up] Pod id_x_013 已创建，端口映射 8085:8080"
+  podman pod create --name id_x_013 -p 8013:8080
+  echo "[up] Pod id_x_013 已创建，端口映射 8013:8080"
 fi
 
 # ============================================
@@ -92,9 +92,8 @@ if ! podman container exists id_x_013-service; then
     -e DB_PORT=5432 \
     -e DB_USERNAME="${POSTGRES_USER:-postgres}" \
     -e DB_PASSWORD="${POSTGRES_PASSWORD:-P@sspostgres!}" \
-    -e PROJECT_PATH=/app/i-Torch \
-    -v ./.env:/app/i-Torch/.env:ro \
-    -v ../logs:/app/i-Torch/logs \
+    -e PROJECT_PATH=/app/i-Core \
+    -v ../../../logs:/app/i-Core/logs \
     --health-cmd "curl -s -o /dev/null http://127.0.0.1:7000/b/id_x_013/graphql || exit 1" \
     --health-interval 15s \
     --health-timeout 5s \
