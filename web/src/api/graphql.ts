@@ -182,8 +182,17 @@ export interface CreateTableInputType {
   username: string;
   password: string;
   database: string;
-  fileData: string;
+  fileData?: string;
+  uploadId?: string;
   filename: string;
+}
+
+export interface ChunkUploadResultPayload {
+  uploadFileChunk: {
+    success: boolean;
+    message: string;
+    receivedIndex: number;
+  };
 }
 
 export interface CreateTableResultPayload {
@@ -192,6 +201,26 @@ export interface CreateTableResultPayload {
     message: string;
     sql: string;
     rowsImported: number;
+  };
+}
+
+export interface SubmitImportJobPayload {
+  submitImportJob: {
+    success: boolean;
+    message: string;
+    jobId: string | null;
+  };
+}
+
+export interface ImportJobStatusPayload {
+  importJobStatus: {
+    jobId: string;
+    status: string; // pending | running | success | failed
+    message: string;
+    rowsImported: number;
+    sql: string;
+    createdAt: string;
+    finishedAt: string | null;
   };
 }
 
@@ -369,6 +398,32 @@ export const dataGraphqlApi = {
   },
 
   /**
+   * 上传文件分片（大文件分片上传）
+   */
+  uploadFileChunk: async (
+    uploadId: string,
+    chunkIndex: number,
+    totalChunks: number,
+    chunkData: string,
+    filename: string,
+  ): Promise<ChunkUploadResultPayload> => {
+    const mutation = `
+      mutation UploadFileChunk($uploadId: String!, $chunkIndex: Int!, $totalChunks: Int!, $chunkData: String!, $filename: String!) {
+        uploadFileChunk(uploadId: $uploadId, chunkIndex: $chunkIndex, totalChunks: $totalChunks, chunkData: $chunkData, filename: $filename) {
+          success
+          message
+          receivedIndex
+        }
+      }
+    `;
+
+    return graphqlClient.request<ChunkUploadResultPayload>({
+      query: mutation,
+      variables: { uploadId, chunkIndex, totalChunks, chunkData, filename },
+    });
+  },
+
+  /**
    * 创建表并导入数据
    */
   createTableAndImport: async (
@@ -388,6 +443,52 @@ export const dataGraphqlApi = {
     return graphqlClient.request<CreateTableResultPayload>({
       query: mutation,
       variables: { input },
+    });
+  },
+
+  /**
+   * 提交后台建表导入任务（大文件推荐：立即返回 jobId，避免网关超时）
+   */
+  submitImportJob: async (
+    input: CreateTableInputType,
+  ): Promise<SubmitImportJobPayload> => {
+    const mutation = `
+      mutation SubmitImportJob($input: CreateTableInput!) {
+        submitImportJob(input: $input) {
+          success
+          message
+          jobId
+        }
+      }
+    `;
+
+    return graphqlClient.request<SubmitImportJobPayload>({
+      query: mutation,
+      variables: { input },
+    });
+  },
+
+  /**
+   * 查询后台导入任务状态
+   */
+  importJobStatus: async (jobId: string): Promise<ImportJobStatusPayload> => {
+    const query = `
+      query ImportJobStatus($jobId: String!) {
+        importJobStatus(jobId: $jobId) {
+          jobId
+          status
+          message
+          rowsImported
+          sql
+          createdAt
+          finishedAt
+        }
+      }
+    `;
+
+    return graphqlClient.request<ImportJobStatusPayload>({
+      query,
+      variables: { jobId },
     });
   },
 };

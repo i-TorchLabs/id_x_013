@@ -53,6 +53,7 @@ export default function Home() {
   const [dbConfig, setDbConfig] = useState<DbConfig | null>(null);
   const [dbConfigLoading, setDbConfigLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string; sql?: string; rowsImported?: number } | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -74,16 +75,44 @@ export default function Home() {
   useEffect(() => { (async () => { try { const r = await dataGraphqlApi.getDbConfig(); setDbConfig(r.getDbConfig); } catch {} finally { setDbConfigLoading(false); } })(); }, []);
   useEffect(() => { setFieldPage(1); }, [parsedFields, currentStep]);
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    setSelectedFile(file); setIsParsing(true); setSubmitResult(null); setParsedFields([]); setFieldDefs([]);
+  // 大文件处理策略：
+  // - 解析字段结构只读取文件头部 PREVIEW_BYTES 采样，避免浏览器字符串长度上限（约 5 亿字符）导致读取失败；
+  // - 小文件（≤ MAX_DIRECT_BYTES）走 base64 单请求直接导入；
+  // - 大文件在提交时按 CHUNK_BYTES 分片上传，服务端合并后流式导入。
+  const PREVIEW_BYTES = 4 * 1024 * 1024; // 4MB 采样
+  const MAX_DIRECT_BYTES = 100 * 1024 * 1024; // 100MB 以内直传
+  const CHUNK_BYTES = 8 * 1024 * 1024; // 每片 8MB
+
+  const readBlobAsBase64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(",")[1]; setFileBase64(base64);
-      try { const r = await dataGraphqlApi.parseFile(base64, file.name); if (r.parseFile.success) { setParsedFields(r.parseFile.fields); setFieldDefs(r.parseFile.fields.map(f => ({ name: f.name, dtype: mapDtype(f.dtype), comment: "" }))); setCurrentStep(1); } else { setSubmitResult({ success: false, message: r.parseFile.message || "文件解析失败" }); } }
-      catch (e: any) { setSubmitResult({ success: false, message: e.message || "文件解析失败" }); } finally { setIsParsing(false); }
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const commaIdx = result.indexOf(",");
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : "");
     };
-    reader.onerror = () => { setIsParsing(false); setSubmitResult({ success: false, message: "文件读取失败" }); };
-    reader.readAsDataURL(file);
+    reader.onerror = () => reject(new Error("文件读取失败"));
+    reader.readAsDataURL(blob);
+  });
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    setSelectedFile(file); setIsParsing(true); setSubmitResult(null); setParsedFields([]); setFieldDefs([]); setFileBase64("");
+    try {
+      // 采样解析：只读文件头部
+      const previewBase64 = await readBlobAsBase64(file.slice(0, PREVIEW_BYTES));
+      if (!previewBase64) throw new Error("文件内容为空或读取失败，请重新选择文件");
+      const r = await dataGraphqlApi.parseFile(previewBase64, file.name);
+      if (!r.parseFile.success) { setSelectedFile(null); setSubmitResult({ success: false, message: r.parseFile.message || "文件解析失败" }); return; }
+      setParsedFields(r.parseFile.fields);
+      setFieldDefs(r.parseFile.fields.map(f => ({ name: f.name, dtype: mapDtype(f.dtype), comment: "" })));
+      setCurrentStep(1);
+      // 小文件预读全量内容，提交时一次直传；大文件提交时走分片上传
+      if (file.size <= MAX_DIRECT_BYTES) {
+        const fullBase64 = await readBlobAsBase64(file);
+        setFileBase64(fullBase64);
+      }
+    } catch (e: any) {
+      setSelectedFile(null); setSubmitResult({ success: false, message: e.message || "文件解析失败" });
+    } finally { setIsParsing(false); }
   }, []);
 
   const mapDtype = (d: string) => { const l = d.toLowerCase(); if (l.includes("int")) return "INTEGER"; if (l.includes("float") || l.includes("double") || l.includes("decimal") || l.includes("number")) return "DOUBLE PRECISION"; if (l.includes("bool")) return "BOOLEAN"; if (l.includes("date") || l.includes("time") || l.includes("timestamp")) return "TIMESTAMP"; return "TEXT"; };
@@ -92,9 +121,51 @@ export default function Home() {
   const handleSubmit = useCallback(async () => {
     if (!tableName.trim()) { setSubmitResult({ success: false, message: "请输入表名" }); return; }
     if (!dbConfig) { setSubmitResult({ success: false, message: "数据库连接配置未加载" }); return; }
-    setIsSubmitting(true); setSubmitResult(null);
-    try { const r = await dataGraphqlApi.createTableAndImport({ tableName: tableName.trim(), tableComment: tableComment.trim(), fields: fieldDefs, host: dbConfig.host, port: Number(dbConfig.port), username: dbConfig.username, password: dbConfig.password, database: dbConfig.database, fileData: fileBase64, filename: selectedFile?.name || "" }); setSubmitResult({ success: r.createTableAndImport.success, message: r.createTableAndImport.message, sql: r.createTableAndImport.sql, rowsImported: r.createTableAndImport.rowsImported }); }
-    catch (e: any) { setSubmitResult({ success: false, message: e.message || "操作失败" }); } finally { setIsSubmitting(false); }
+    if (!fileBase64 && !selectedFile) { setSubmitResult({ success: false, message: "请先选择文件" }); return; }
+    setIsSubmitting(true); setSubmitResult(null); setUploadProgress(null);
+    try {
+      const base = { tableName: tableName.trim(), tableComment: tableComment.trim(), fields: fieldDefs, host: dbConfig.host, port: Number(dbConfig.port), username: dbConfig.username, password: dbConfig.password, database: dbConfig.database, filename: selectedFile?.name || "" };
+      let payload;
+      if (fileBase64) {
+        // 小文件：base64 直传
+        payload = { ...base, fileData: fileBase64 };
+      } else {
+        // 大文件：分片上传，服务端合并后导入
+        const file = selectedFile!;
+        const uploadId = crypto.randomUUID();
+        const totalChunks = Math.ceil(file.size / CHUNK_BYTES);
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkBase64 = await readBlobAsBase64(file.slice(i * CHUNK_BYTES, (i + 1) * CHUNK_BYTES));
+          const ur = await dataGraphqlApi.uploadFileChunk(uploadId, i, totalChunks, chunkBase64, file.name);
+          if (!ur.uploadFileChunk.success) throw new Error(ur.uploadFileChunk.message || `分片 ${i + 1}/${totalChunks} 上传失败`);
+          setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+        }
+        payload = { ...base, uploadId };
+      }
+      setUploadProgress(null);
+      if (fileBase64) {
+        // 小文件：同步导入，一次请求拿结果
+        const r = await dataGraphqlApi.createTableAndImport(payload);
+        setSubmitResult({ success: r.createTableAndImport.success, message: r.createTableAndImport.message, sql: r.createTableAndImport.sql, rowsImported: r.createTableAndImport.rowsImported });
+      } else {
+        // 大文件：后台任务导入 + 轮询状态，彻底避开网关超时
+        const sr = await dataGraphqlApi.submitImportJob(payload);
+        if (!sr.submitImportJob.success || !sr.submitImportJob.jobId) throw new Error(sr.submitImportJob.message || "任务受理失败");
+        const jobId = sr.submitImportJob.jobId;
+        // 轮询直至终态
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          await new Promise(r => setTimeout(r, 3000));
+          const st = await dataGraphqlApi.importJobStatus(jobId);
+          const s = st.importJobStatus;
+          if (s.status === "success" || s.status === "failed") {
+            setSubmitResult({ success: s.status === "success", message: s.message, sql: s.sql, rowsImported: s.rowsImported });
+            break;
+          }
+        }
+      }
+    }
+    catch (e: any) { setSubmitResult({ success: false, message: e.message || "操作失败" }); } finally { setIsSubmitting(false); setUploadProgress(null); }
   }, [tableName, tableComment, fieldDefs, dbConfig, fileBase64, selectedFile]);
   const handleLogout = useCallback(async () => { setShowLogoutConfirm(false); try { await userGraphqlApi.logout(); } catch {} localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/f/login"); }, [router]);
   const handleReset = useCallback(() => { setSelectedFile(null); setFileBase64(""); setParsedFields([]); setFieldDefs([]); setTableName(""); setTableComment(""); setSubmitResult(null); setCurrentStep(0); }, []);
@@ -283,7 +354,7 @@ export default function Home() {
                       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
                       onDragLeave={() => setIsDragOver(false)}
                       onDrop={handleDrop}>
-                      <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
+                      <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }} />
                       <div className="flex flex-col items-center gap-6">
                         {isParsing ? (
                           <div className="flex flex-col items-center gap-6" style={{ padding: "24px 0" }}>
@@ -359,6 +430,12 @@ export default function Home() {
                         )}
                       </div>
                     </div>
+                    {submitResult && !submitResult.success && (
+                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl"
+                        style={{ marginTop: "20px", padding: "14px 18px", background: t.errorBg, border: `1px solid ${t.errorBorder}` }}>
+                        <p style={{ fontFamily: SFT, fontSize: "14px", fontWeight: 500, color: t.error, letterSpacing: "-0.24px", margin: 0 }}>{submitResult.message}</p>
+                      </motion.div>
+                    )}
                     <StepNav onPrev={() => {}} onNext={() => setCurrentStep(1)} prevDisabled={true} nextDisabled={!selectedFile || isParsing} nextLabel={isParsing ? "Parsing..." : "Next"} />
                    </Card>
                  </motion.div>
@@ -536,7 +613,7 @@ export default function Home() {
                         style={{ fontFamily: SFT, background: accent, color: accentFg, border: "none", borderRadius: "980px", letterSpacing: "-0.32px", cursor: canSubmit ? "pointer" : "not-allowed" }}
                         onMouseEnter={e => { if (canSubmit) e.currentTarget.style.opacity = "0.85"; }} onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}>
                         <div style={{ padding: "8px 32px" }}>
-                          {isSubmitting ? <span className="flex items-center gap-2.5"><span className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: isDark ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.3)", borderTopColor: "transparent" }} />Importing...</span> : "Submit"}
+                          {isSubmitting ? <span className="flex items-center gap-2.5"><span className="w-4 h-4 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: isDark ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.3)", borderTopColor: "transparent" }} />{uploadProgress !== null ? `Uploading ${uploadProgress}%` : "Importing..."}</span> : "Submit"}
                         </div>
                       </button>
                     </div>

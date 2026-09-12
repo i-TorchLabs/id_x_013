@@ -11,9 +11,18 @@
 - 日志统一使用引擎层 ``utils.log_util`` 工具，自动带请求 ID。
 """
 import base64
+import asyncio
 import hashlib
 import io
+import itertools
+import json
+import os
+import re
 import secrets
+import shutil
+import tempfile
+import threading
+import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -31,6 +40,7 @@ from x_models.id_x_013.src.models.x_models import (
 )
 from x_models.id_x_013.src.schemas.x_schemas import (
     AuthResponseType,
+    ChunkUploadResultType,
     CreateTableInput,
     CreateTableResultType,
     DbConfigType,
@@ -39,6 +49,8 @@ from x_models.id_x_013.src.schemas.x_schemas import (
     ForgotPasswordInput,
     ForgotPasswordResponseType,
     HealthType,
+    ImportJobStatusType,
+    ImportJobSubmitType,
     LoginInput,
     RegisterInput,
     UserInfoType,
@@ -322,7 +334,10 @@ async def view_parse_file(
         lower_name = filename.lower()
         try:
             if lower_name.endswith(".csv"):
-                df = pd.read_csv(io.BytesIO(raw_bytes))
+                # 前端可能只上传文件头部采样，丢弃被截断的最后一行，
+                # 并容错处理截断产生的非法 UTF-8 字节
+                trimmed = raw_bytes.rsplit(b"\n", 1)[0] if b"\n" in raw_bytes else raw_bytes
+                df = pd.read_csv(io.BytesIO(trimmed), encoding_errors="replace")
             elif lower_name.endswith((".xlsx", ".xls")):
                 df = pd.read_excel(io.BytesIO(raw_bytes))
             else:
@@ -380,50 +395,397 @@ async def view_parse_file(
         )
 
 
+# 分片上传暂存目录（系统临时目录下）
+UPLOAD_ROOT = os.path.join(tempfile.gettempdir(), "id_x_013_uploads")
+# 大文件 CSV 流式导入的每批行数
+CSV_CHUNK_ROWS = 20000
+
+
+def _sanitize_upload_id(upload_id: str) -> str:
+    """仅保留安全字符，防止路径穿越。"""
+    return re.sub(r"[^A-Za-z0-9_-]", "", upload_id or "")
+
+
+async def view_upload_file_chunk(
+    upload_id: str,
+    chunk_index: int,
+    total_chunks: int,
+    chunk_data: str,
+    filename: str,
+) -> ChunkUploadResultType:
+    """接收单个文件分片并落盘暂存，供后续合并导入。"""
+    try:
+        safe_id = _sanitize_upload_id(upload_id)
+        if not safe_id:
+            return ChunkUploadResultType(
+                success=False, message="非法的 upload_id", received_index=-1
+            )
+        if chunk_index < 0 or total_chunks <= 0 or chunk_index >= total_chunks:
+            return ChunkUploadResultType(
+                success=False, message="分片序号不合法", received_index=-1
+            )
+        try:
+            raw = base64.b64decode(chunk_data)
+        except Exception as decode_err:
+            return ChunkUploadResultType(
+                success=False,
+                message=f"Base64 解码失败: {str(decode_err)}",
+                received_index=-1,
+            )
+
+        upload_dir = os.path.join(UPLOAD_ROOT, safe_id)
+        os.makedirs(upload_dir, exist_ok=True)
+        part_path = os.path.join(upload_dir, f"{chunk_index:06d}.part")
+        with open(part_path, "wb") as f:
+            f.write(raw)
+        # 元信息（每次写入保持一致，便于任一分片到达后都能恢复上下文）
+        with open(os.path.join(upload_dir, "meta.json"), "w") as f:
+            json.dump({"filename": filename, "total_chunks": total_chunks}, f)
+
+        logger.info(
+            f"{get_request_id()}接收分片 {safe_id} "
+            f"{chunk_index + 1}/{total_chunks} ({len(raw)} bytes)"
+        )
+        return ChunkUploadResultType(
+            success=True, message="分片接收成功", received_index=chunk_index
+        )
+    except Exception as e:
+        logger.error(f"{get_request_id()}接收分片失败: {e}", exc_info=True)
+        return ChunkUploadResultType(
+            success=False, message=f"接收分片失败: {str(e)}", received_index=-1
+        )
+
+
+def _normalize_cell(v):
+    """将单元格值规范化为 psycopg2 可写入的原生类型。
+
+    NaN -> None；numpy 标量 -> Python 原生标量；其余原样返回。
+    """
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):
+            return None
+    except (TypeError, ValueError):
+        # 非标量（如 list/dict）无法用 pd.isna 判断，按原值处理
+        pass
+    return v.item() if hasattr(v, "item") else v
+
+
+def _import_chunks_to_pg(all_chunks, input, quoted_table, create_sql, comment_sqls):
+    """阻塞式执行：建表 + 批量导入（运行于工作线程）。
+
+    返回 (rows_imported, )。异常向上抛出，由调用方统一捕获回滚。
+    """
+    conn = None
+    cursor = None
+    try:
+        # connect_timeout 避免目标库不可达时长时间挂起
+        conn = psycopg2.connect(
+            host=input.host,
+            port=input.port,
+            user=input.username,
+            password=input.password,
+            dbname=input.database,
+            connect_timeout=10,
+        )
+        conn.autocommit = False
+        cursor = conn.cursor()
+
+        # 执行建表与注释
+        cursor.execute(create_sql)
+        for stmt in comment_sqls:
+            cursor.execute(stmt)
+
+        # 使用用户定义的字段名作为目标列，按字段名从 df 中取值
+        field_names = [f.name for f in input.fields]
+        col_str = ", ".join(f'"{n}"' for n in field_names)
+        ph_str = ", ".join(["%s"] * len(field_names))
+        insert_sql = (
+            f"INSERT INTO {quoted_table} ({col_str}) VALUES ({ph_str})"
+        )
+
+        rows_imported = 0
+        for chunk in all_chunks:
+            # 仅保留目标列中实际存在的列，缺失列位置后续用 None 填充
+            present = [n for n in field_names if n in chunk.columns]
+            sub = chunk[present] if present else chunk.iloc[:, 0:0]
+            # 向量化转原生 Python 对象，避免 iterrows() 逐行开销
+            arr = sub.to_numpy(dtype=object, na_value=None)
+            col_pos = {n: i for i, n in enumerate(present)}
+
+            rows_to_insert = []
+            for row in arr:
+                values = []
+                for n in field_names:
+                    idx = col_pos.get(n)
+                    values.append(
+                        _normalize_cell(row[idx]) if idx is not None else None
+                    )
+                rows_to_insert.append(tuple(values))
+
+            if rows_to_insert:
+                cursor.executemany(insert_sql, rows_to_insert)
+                rows_imported += len(rows_to_insert)
+
+        conn.commit()
+        return rows_imported
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn is not None:
+            try:
+                if conn.closed == 0:
+                    conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 async def view_create_table_and_import(
     input: CreateTableInput,
 ) -> CreateTableResultType:
-    try:
-        # 1) 解码文件内容
-        try:
-            raw_bytes = base64.b64decode(input.file_data)
-        except Exception as decode_err:
-            return CreateTableResultType(
-                success=False,
-                message=f"Base64 解码失败: {str(decode_err)}",
-                sql="",
-                rows_imported=0,
-            )
+    """同步建表导入（小文件/调用方愿意等待的场景）。
 
-        # 2) 读取为 DataFrame
+    大文件建议改用 view_submit_import_job（后台任务 + 轮询），
+    以免受任何一层网关超时限制。
+    """
+    result = await _run_import_job(input)
+    return CreateTableResultType(
+        success=result["success"],
+        message=result["message"],
+        sql=result["sql"],
+        rows_imported=result["rows_imported"],
+    )
+
+
+# ==========================================
+# 后台导入任务（避免长请求被网关超时切断）
+# ==========================================
+
+# 任务状态落盘目录（多 worker 进程间共享：submit 与 status 可能落到不同 worker）
+_IMPORT_JOB_DIR = os.path.join(tempfile.gettempdir(), "id_x_013_import_jobs")
+os.makedirs(_IMPORT_JOB_DIR, exist_ok=True)
+# 任务结果保留时长（秒），过期清理
+_IMPORT_JOB_TTL = 3600
+_IMPORT_JOBS_LOCK = threading.Lock()
+
+
+def _job_path(job_id: str) -> str:
+    safe = _sanitize_upload_id(job_id)
+    return os.path.join(_IMPORT_JOB_DIR, f"{safe}.json")
+
+
+def _set_job(job_id: str, **fields) -> None:
+    """合并写入任务状态（原子写，避免并发读得到半截 JSON）。"""
+    with _IMPORT_JOBS_LOCK:
+        job = _read_job_unlocked(job_id) or {}
+        job.update(fields)
+        path = _job_path(job_id)
+        tmp = f"{path}.{threading.get_ident()}.tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(job, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except Exception as e:
+            logger.error(f"写入任务状态失败 {job_id}: {e}")
+
+
+def _read_job_unlocked(job_id: str) -> Optional[dict]:
+    path = _job_path(job_id)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _get_job(job_id: str) -> Optional[dict]:
+    with _IMPORT_JOBS_LOCK:
+        return _read_job_unlocked(job_id)
+
+
+def _gc_jobs() -> None:
+    """清理已完成且超过 TTL 的任务文件。"""
+    now = datetime.utcnow()
+    try:
+        for fn in os.listdir(_IMPORT_JOB_DIR):
+            if not fn.endswith(".json"):
+                continue
+            path = os.path.join(_IMPORT_JOB_DIR, fn)
+            try:
+                with open(path) as f:
+                    job = json.load(f)
+            except Exception:
+                continue
+            fin = job.get("_finished_dt")
+            if fin:
+                try:
+                    fin_dt = datetime.fromisoformat(fin)
+                except ValueError:
+                    continue
+                if (now - fin_dt).total_seconds() > _IMPORT_JOB_TTL:
+                    os.remove(path)
+    except Exception:
+        pass
+
+
+async def view_submit_import_job(
+    input: CreateTableInput,
+) -> ImportJobSubmitType:
+    """受理建表导入请求并立即返回 job_id，后台线程执行导入。
+
+    前端随后以 job_id 轮询 view_import_job_status，彻底避开网关超时。
+    """
+    try:
+        job_id = uuid.uuid4().hex
+        _gc_jobs()
+        _set_job(
+            job_id,
+            status="pending",
+            message="任务已受理，排队执行中",
+            rows_imported=0,
+            sql="",
+            created_at=datetime.utcnow().isoformat(),
+            finished_at=None,
+            _finished_dt=None,
+        )
+
+        def _thread_main() -> None:
+            # 独立线程 + 独立事件循环，与请求生命周期完全解耦，
+            # 即使提交后客户端断开连接，导入也会继续执行。
+            _set_job(job_id, status="running", message="导入中")
+            try:
+                result = asyncio.run(_run_import_job(input))
+                _set_job(
+                    job_id,
+                    status="success" if result["success"] else "failed",
+                    message=result["message"],
+                    rows_imported=result["rows_imported"],
+                    sql=result["sql"],
+                    finished_at=datetime.utcnow().isoformat(),
+                    _finished_dt=datetime.utcnow().isoformat(),
+                )
+            except Exception as run_err:
+                logger.error(
+                    f"导入任务 {job_id} 执行异常: {run_err}", exc_info=True
+                )
+                _set_job(
+                    job_id,
+                    status="failed",
+                    message=f"执行异常: {str(run_err)}",
+                    finished_at=datetime.utcnow().isoformat(),
+                    _finished_dt=datetime.utcnow().isoformat(),
+                )
+
+        # 后台守护线程执行，不阻塞当前 HTTP 请求
+        threading.Thread(
+            target=_thread_main, name=f"import-job-{job_id[:8]}", daemon=True
+        ).start()
+        logger.info(f"{get_request_id()}受理导入任务 {job_id}（表 {input.table_name}）")
+        return ImportJobSubmitType(
+            success=True, message="导入任务已受理", job_id=job_id
+        )
+    except Exception as e:
+        logger.error(f"{get_request_id()}受理导入任务失败: {e}", exc_info=True)
+        return ImportJobSubmitType(
+            success=False, message=f"受理失败: {str(e)}", job_id=None
+        )
+
+
+async def view_import_job_status(job_id: str) -> ImportJobStatusType:
+    job = _get_job(job_id)
+    if job is None:
+        return ImportJobStatusType(
+            job_id=job_id,
+            status="failed",
+            message="任务不存在或已过期",
+            rows_imported=0,
+            sql="",
+            created_at="",
+            finished_at=None,
+        )
+    return ImportJobStatusType(
+        job_id=job_id,
+        status=job.get("status", "pending"),
+        message=job.get("message", ""),
+        rows_imported=job.get("rows_imported", 0),
+        sql=job.get("sql", ""),
+        created_at=job.get("created_at", ""),
+        finished_at=job.get("finished_at"),
+    )
+
+
+async def _run_import_job(input: CreateTableInput) -> dict:
+    """执行建表 + 导入的完整流程（与具体 GraphQL 类型解耦，便于后台复用）。
+
+    返回 dict: {success, message, sql, rows_imported}
+    """
+    upload_dir: Optional[str] = None
+    try:
+        # 1) 获取数据源：优先 upload_id（分片合并后的本地文件），否则 base64
+        source: object
         lower_name = input.filename.lower()
+        if input.upload_id:
+            safe_id = _sanitize_upload_id(input.upload_id)
+            upload_dir = (
+                os.path.join(UPLOAD_ROOT, safe_id) if safe_id else None
+            )
+            if not upload_dir:
+                return {"success": False, "message": "非法的 upload_id", "sql": "", "rows_imported": 0}
+            meta_path = os.path.join(upload_dir, "meta.json")
+            if not os.path.isfile(meta_path):
+                return {"success": False, "message": "分片上传不存在或已过期，请重新上传文件", "sql": "", "rows_imported": 0}
+            with open(meta_path) as mf:
+                meta = json.load(mf)
+            lower_name = str(meta.get("filename") or input.filename).lower()
+            total = int(meta.get("total_chunks") or 0)
+            parts = [
+                os.path.join(upload_dir, f"{i:06d}.part")
+                for i in range(total)
+            ]
+            if total <= 0 or any(not os.path.isfile(p) for p in parts):
+                return {"success": False, "message": "分片不完整，请重新上传文件", "sql": "", "rows_imported": 0}
+            merged_path = os.path.join(upload_dir, "merged.bin")
+            with open(merged_path, "wb") as out:
+                for p in parts:
+                    with open(p, "rb") as pf:
+                        shutil.copyfileobj(pf, out)
+            source = merged_path
+        elif input.file_data:
+            try:
+                raw_bytes = base64.b64decode(input.file_data)
+            except Exception as decode_err:
+                return {"success": False, "message": f"Base64 解码失败: {str(decode_err)}", "sql": "", "rows_imported": 0}
+            source = io.BytesIO(raw_bytes)
+        else:
+            return {"success": False, "message": "缺少文件数据（file_data 或 upload_id 必传其一）", "sql": "", "rows_imported": 0}
+
+        # 2) 构造数据块迭代器（大文件 CSV 流式读取，避免全量载入内存）
         try:
             if lower_name.endswith(".csv"):
-                df = pd.read_csv(io.BytesIO(raw_bytes))
+                chunk_iter = pd.read_csv(source, chunksize=CSV_CHUNK_ROWS)
             elif lower_name.endswith((".xlsx", ".xls")):
-                df = pd.read_excel(io.BytesIO(raw_bytes))
+                chunk_iter = iter([pd.read_excel(source)])
             else:
-                return CreateTableResultType(
-                    success=False,
-                    message="不支持的文件类型，仅支持 .csv / .xlsx / .xls",
-                    sql="",
-                    rows_imported=0,
-                )
+                return {"success": False, "message": "不支持的文件类型，仅支持 .csv / .xlsx / .xls", "sql": "", "rows_imported": 0}
+            chunk_iter = iter(chunk_iter)
+            first_chunk = next(chunk_iter, None)
         except Exception as parse_err:
-            return CreateTableResultType(
-                success=False,
-                message=f"文件解析失败: {str(parse_err)}",
-                sql="",
-                rows_imported=0,
-            )
+            return {"success": False, "message": f"文件解析失败: {str(parse_err)}", "sql": "", "rows_imported": 0}
 
-        if df is None or df.empty:
-            return CreateTableResultType(
-                success=False,
-                message="文件为空或无数据",
-                sql="",
-                rows_imported=0,
-            )
+        if first_chunk is None or first_chunk.empty:
+            return {"success": False, "message": "文件为空或无数据", "sql": "", "rows_imported": 0}
+
+        all_chunks = itertools.chain([first_chunk], chunk_iter)
 
         # 3) 构造建表 SQL（使用用户传入的字段定义）
         quoted_table = f'"{input.table_name}"'
@@ -458,106 +820,41 @@ async def view_create_table_and_import(
 
         full_sql = "\n".join([create_sql] + comment_sqls)
 
-        # 4) 连接用户提供的 PostgreSQL 数据库
-        conn = None
-        cursor = None
+        # 4) 连接用户提供的 PostgreSQL 数据库并导入（阻塞操作，放入工作线程，
+        #    避免长时间占用事件循环；线程内完成建表 + 批量 INSERT）
         try:
-            conn = psycopg2.connect(
-                host=input.host,
-                port=input.port,
-                user=input.username,
-                password=input.password,
-                dbname=input.database,
+            rows_imported = await asyncio.to_thread(
+                _import_chunks_to_pg,
+                all_chunks,
+                input,
+                quoted_table,
+                create_sql,
+                comment_sqls,
             )
-            conn.autocommit = False
-            cursor = conn.cursor()
-
-            # 执行建表与注释
-            cursor.execute(create_sql)
-            for stmt in comment_sqls:
-                cursor.execute(stmt)
-
-            # 5) 导入数据：通过参数化 INSERT 批量写入
-            # 使用用户定义的字段名作为目标列，按字段名从 df 中取值。
-            field_names = [f.name for f in input.fields]
-            # 构造列名片段和占位符片段
-            col_str = ", ".join(f'"{n}"' for n in field_names)
-            ph_str = ", ".join(["%s"] * len(field_names))
-            insert_sql = (
-                f"INSERT INTO {quoted_table} ({col_str}) VALUES ({ph_str})"
-            )
-
-            # 取 df 的对应列；若某列在 df 中不存在，则用 None 填充
-            rows_to_insert = []
-            for _, row in df.iterrows():
-                values = []
-                for n in field_names:
-                    if n in df.columns:
-                        v = row[n]
-                        # 将 NaN 转为 None 便于 psycopg2 写入 NULL
-                        if pd.isna(v):
-                            values.append(None)
-                        else:
-                            # numpy 标量转原生 Python 类型，psycopg2 无法适配 numpy.int64 等
-                            values.append(v.item() if hasattr(v, "item") else v)
-                    else:
-                        values.append(None)
-                rows_to_insert.append(tuple(values))
-
-            # 批量执行
-            cursor.executemany(insert_sql, rows_to_insert)
-
-            rows_imported = len(rows_to_insert)
-
-            conn.commit()
 
             logger.info(
                 f"{get_request_id()}在 {input.host}:{input.port}/{input.database} "
                 f"成功创建表 {input.table_name} 并导入 {rows_imported} 行数据"
             )
 
-            return CreateTableResultType(
-                success=True,
-                message=f"Table created and {rows_imported} rows imported successfully",
-                sql=full_sql,
-                rows_imported=rows_imported,
-            )
+            return {"success": True, "message": f"Table created and {rows_imported} rows imported successfully", "sql": full_sql, "rows_imported": rows_imported}
 
         except Exception as db_err:
-            if conn is not None:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
             logger.error(
                 f"{get_request_id()}建表/导入数据库失败: {db_err}",
                 exc_info=True,
             )
-            return CreateTableResultType(
-                success=False,
-                message=f"数据库操作失败: {str(db_err)}",
-                sql=full_sql,
-                rows_imported=0,
-            )
-        finally:
-            if cursor is not None:
-                try:
-                    cursor.close()
-                except Exception:
-                    pass
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            return {"success": False, "message": f"数据库操作失败: {str(db_err)}", "sql": full_sql, "rows_imported": 0}
 
     except Exception as e:
         logger.error(
             f"{get_request_id()}创建表并导入数据失败: {e}", exc_info=True
         )
-        return CreateTableResultType(
-            success=False,
-            message=f"处理失败: {str(e)}",
-            sql="",
-            rows_imported=0,
-        )
+        return {"success": False, "message": f"处理失败: {str(e)}", "sql": "", "rows_imported": 0}
+    finally:
+        # 清理分片暂存目录
+        if upload_dir:
+            try:
+                shutil.rmtree(upload_dir, ignore_errors=True)
+            except Exception:
+                pass

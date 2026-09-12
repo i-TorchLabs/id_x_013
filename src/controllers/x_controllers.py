@@ -13,6 +13,7 @@ import strawberry
 
 from x_models.id_x_013.src.schemas.x_schemas import (
     AuthResponseType,
+    ChunkUploadResultType,
     CreateTableInput,
     CreateTableResultType,
     DbConfigType,
@@ -20,6 +21,8 @@ from x_models.id_x_013.src.schemas.x_schemas import (
     ForgotPasswordInput,
     ForgotPasswordResponseType,
     HealthType,
+    ImportJobStatusType,
+    ImportJobSubmitType,
     LoginInput,
     RegisterInput,
 )
@@ -28,10 +31,13 @@ from x_models.id_x_013.src.views.x_views import (
     view_forgot_password,
     view_get_db_config,
     view_health,
+    view_import_job_status,
     view_login,
     view_logout,
     view_parse_file,
     view_register,
+    view_submit_import_job,
+    view_upload_file_chunk,
 )
 
 
@@ -44,6 +50,10 @@ class Query:
     @strawberry.field(description="获取默认数据库连接配置")
     async def get_db_config(self) -> Optional[DbConfigType]:
         return await view_get_db_config()
+
+    @strawberry.field(description="查询后台导入任务状态")
+    async def import_job_status(self, job_id: str) -> ImportJobStatusType:
+        return await view_import_job_status(job_id)
 
 
 @strawberry.type
@@ -72,11 +82,32 @@ class Mutation:
     ) -> FileUploadResultType:
         return await view_parse_file(file_data, filename)
 
+    @strawberry.mutation(description="上传文件分片（大文件分片上传）")
+    async def upload_file_chunk(
+        self,
+        upload_id: str,
+        chunk_index: int,
+        total_chunks: int,
+        chunk_data: str,
+        filename: str,
+    ) -> ChunkUploadResultType:
+        return await view_upload_file_chunk(
+            upload_id, chunk_index, total_chunks, chunk_data, filename
+        )
+
     @strawberry.mutation(description="在目标 PostgreSQL 数据库中创建表并导入数据")
     async def create_table_and_import(
         self, input: CreateTableInput
     ) -> CreateTableResultType:
         return await view_create_table_and_import(input)
+
+    @strawberry.mutation(
+        description="提交后台建表导入任务（立即返回 job_id，轮询 importJobStatus 获取结果）"
+    )
+    async def submit_import_job(
+        self, input: CreateTableInput
+    ) -> ImportJobSubmitType:
+        return await view_submit_import_job(input)
 
 
 schema = strawberry.Schema(

@@ -102,10 +102,22 @@ class CreateTableInput:
     username: str = strawberry.field(description="目标 PostgreSQL 用户名")
     password: str = strawberry.field(description="目标 PostgreSQL 密码")
     database: str = strawberry.field(description="目标 PostgreSQL 数据库名")
-    file_data: str = strawberry.field(
-        description="Base64 编码的文件内容，用于导入数据"
+    file_data: Optional[str] = strawberry.field(
+        default=None,
+        description="Base64 编码的文件内容（小文件直传），与 upload_id 二选一",
+    )
+    upload_id: Optional[str] = strawberry.field(
+        default=None,
+        description="分片上传 ID（大文件），提供后从服务端分片合并读取",
     )
     filename: str = strawberry.field(description="原始文件名，用于判断文件类型")
+
+
+@strawberry.type
+class ChunkUploadResultType:
+    success: bool = strawberry.field(description="是否成功")
+    message: str = strawberry.field(description="消息")
+    received_index: int = strawberry.field(description="已接收的分片序号")
 
 
 @strawberry.type
@@ -114,6 +126,30 @@ class CreateTableResultType:
     message: str = strawberry.field(description="消息")
     sql: str = strawberry.field(description="实际的建表 SQL 语句")
     rows_imported: int = strawberry.field(description="成功导入的数据行数")
+
+
+@strawberry.type
+class ImportJobSubmitType:
+    success: bool = strawberry.field(description="是否成功受理")
+    message: str = strawberry.field(description="消息")
+    job_id: Optional[str] = strawberry.field(
+        default=None, description="导入任务 ID（用于轮询状态）"
+    )
+
+
+@strawberry.type
+class ImportJobStatusType:
+    job_id: str = strawberry.field(description="任务 ID")
+    status: str = strawberry.field(
+        description="状态：pending/running/success/failed"
+    )
+    message: str = strawberry.field(default="", description="结果或错误消息")
+    rows_imported: int = strawberry.field(default=0, description="已导入行数")
+    sql: str = strawberry.field(default="", description="建表 SQL")
+    created_at: str = strawberry.field(default="", description="任务创建时间（ISO）")
+    finished_at: Optional[str] = strawberry.field(
+        default=None, description="任务结束时间（ISO）"
+    )
 
 
 @strawberry.type

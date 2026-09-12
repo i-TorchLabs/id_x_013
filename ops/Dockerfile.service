@@ -42,6 +42,10 @@ COPY config /app/i-Core/config
 COPY x_models/_contracts /app/i-Core/x_models/_contracts
 COPY x_models/id_x_013 /app/i-Core/x_models/id_x_013
 
+# 覆盖为容器专用配置：镜像内只含 id_x_013，MODELS 必须指向 id_x_013，
+# 否则插件不加载 -> 路由 404 -> HAProxy 健康检查失败 -> 503。
+COPY x_models/id_x_013/ops/base_config.container.toml /app/i-Core/config/base_config.toml
+
 # 运行时目录（logs 由 compose 挂卷持久化）
 RUN mkdir -p /app/i-Core/logs
 

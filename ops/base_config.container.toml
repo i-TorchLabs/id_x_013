@@ -1,0 +1,53 @@
+# id_x_013 容器专用配置（构建时覆盖镜像内 config/base_config.toml）。
+#
+# 背景：引擎层 config/base_config.toml 的 [EXTEND].MODELS 是加载插件的唯一入口，
+# 仓库共享配置默认指向 id_x_010（供宿主机本地开发）。但 id_x_013 镜像
+# （Dockerfile.service）只 COPY 了 id_x_013 与 _contracts，并不包含 id_x_010，
+# 若沿用共享配置会导致：
+#   - id_x_010 加载失败（镜像内不存在）刷屏报错；
+#   - id_x_013 从未被加载 -> /b/id_x_013/graphql 路由不存在（404）
+#     -> HAProxy 健康检查收到 404（不在 ^(200|400|405)$ 白名单）-> 判定 DOWN -> 503。
+# 因此容器内必须使用本文件，将 MODELS 指向 id_x_013。
+#
+# 与共享 config/base_config.toml 的唯一差异为 [EXTEND].MODELS。
+
+[BASE]
+LISTEN_ADDRESS = "0.0.0.0"
+LISTEN_PORT = "7000"
+DEBUG_MODE = false
+SECRET_KEY = "bW9vbmxhYg=="
+# 容器内工作目录（Dockerfile WORKDIR /app/i-Core）
+PROJECT_PATH = "/app/i-Core"
+MAX_REQUEST_BODY_SIZE = 1073741824
+
+[LOG]
+INFO_LOG_PATH = "logs/info.log"
+WARN_LOG_PATH = "logs/warn.log"
+ERROR_LOG_PATH = "logs/error.log"
+
+[EXTEND]
+MODELS = [
+    ["id_x_013", "/id_x_013"],
+]
+
+[LLM]
+# local | external
+LLM_PROVIDER = "external"
+
+EXTERNAL_LLM_BASE_URL = "https://api.siliconflow.cn/v1"
+EXTERNAL_EMBD_BASE_URL = "https://api.siliconflow.cn/v1"
+EXTERNAL_VL_BASE_URL = "https://api.siliconflow.cn/v1"
+EXTERNAL_API_KEY = "sk-wdqcchmtuorxjjdftgrdmzjxqjgzolsegqmlqgaxsuuhwlxk"
+EXTERNAL_LLM_MODEL = "Qwen/Qwen3.6-27B"
+EXTERNAL_EMBD_MODEL = "Qwen/Qwen3-VL-Embedding-8B"
+EXTERNAL_VL_MODEL = "Qwen/Qwen3-VL-32B-Thinking"
+
+NORMAL_PDF_MODE = "chat_completions_image_url"
+NORMAL_PDF_MAX_PAGES = 2
+NORMAL_TIMEOUT_SECONDS = 900
+NORMAL_RESPONSE_FORMAT = ""
+NORMAL_PDF_MAX_OUTPUT_TOKENS = 131072
+NORMAL_NUM_CTX = 65536
+
+APP_ENV = "production"
+CORS_ORIGINS = "*"
