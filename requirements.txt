@@ -10,4 +10,5 @@ pydantic
 strawberry-graphql
 psycopg2
 openpyxl
+lxml
 pandas

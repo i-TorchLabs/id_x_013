@@ -76,7 +76,7 @@ class Mutation:
     async def logout(self) -> AuthResponseType:
         return await view_logout()
 
-    @strawberry.mutation(description="解析上传的 Excel/CSV 文件，返回字段信息")
+    @strawberry.mutation(description="解析上传的 Excel/CSV/XML 文件，返回字段信息")
     async def parse_file(
         self, file_data: str, filename: str
     ) -> FileUploadResultType:

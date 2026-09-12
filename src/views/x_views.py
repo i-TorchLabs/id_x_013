@@ -31,6 +31,10 @@ import psycopg2
 from sqlalchemy import select
 
 from utils.log_util import get_request_id, logger
+from x_models.id_x_013.src.parsers.xml_parser import (
+    open_xml_chunks,
+    xml_preview,
+)
 from x_models.id_x_013.src.models.x_models import (
     DbConfig,
     PasswordResetToken,
@@ -340,10 +344,13 @@ async def view_parse_file(
                 df = pd.read_csv(io.BytesIO(trimmed), encoding_errors="replace")
             elif lower_name.endswith((".xlsx", ".xls")):
                 df = pd.read_excel(io.BytesIO(raw_bytes))
+            elif lower_name.endswith(".xml"):
+                # 流式解析：自动识别记录标签，仅读取前若干条记录做字段预览
+                df = xml_preview(io.BytesIO(raw_bytes))
             else:
                 return FileUploadResultType(
                     success=False,
-                    message="不支持的文件类型，仅支持 .csv / .xlsx / .xls",
+                    message="不支持的文件类型，仅支持 .csv / .xlsx / .xls / .xml",
                     fields=[],
                 )
         except Exception as parse_err:
@@ -775,8 +782,11 @@ async def _run_import_job(input: CreateTableInput) -> dict:
                 chunk_iter = pd.read_csv(source, chunksize=CSV_CHUNK_ROWS)
             elif lower_name.endswith((".xlsx", ".xls")):
                 chunk_iter = iter([pd.read_excel(source)])
+            elif lower_name.endswith(".xml"):
+                # 流式解析 + 自动识别记录标签，按批产出 DataFrame
+                chunk_iter = open_xml_chunks(source, chunk_size=CSV_CHUNK_ROWS)
             else:
-                return {"success": False, "message": "不支持的文件类型，仅支持 .csv / .xlsx / .xls", "sql": "", "rows_imported": 0}
+                return {"success": False, "message": "不支持的文件类型，仅支持 .csv / .xlsx / .xls / .xml", "sql": "", "rows_imported": 0}
             chunk_iter = iter(chunk_iter)
             first_chunk = next(chunk_iter, None)
         except Exception as parse_err:

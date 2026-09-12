@@ -2,7 +2,7 @@
 
 # id_x_013: 数据导入工作台
 
-**上传即入库 —— 面向科研数据资产的 Excel/CSV 解析与 PostgreSQL 自动建表导入插件**
+**上传即入库 —— 面向科研数据资产的 Excel/CSV/XML 解析与 PostgreSQL 自动建表导入插件**
 
 ![编号](https://img.shields.io/static/v1?label=%E7%BC%96%E5%8F%B7&message=id_x_013&color=%234B5320&style=flat-square&labelColor=black)
 ![协议](https://img.shields.io/static/v1?label=%E5%8D%8F%E8%AE%AE&message=AGPL--3.0&color=%234B5320&style=flat-square&labelColor=black)
@@ -20,12 +20,12 @@
 
 **上传即入库 —— 从文件到数据表，一步直达。**
 
-id_x_013（数据导入工作台）是面向科研数据资产的 Excel/CSV 解析与 PostgreSQL 自动建表导入插件。上传即入库，覆盖文件解析、目标库连接、自动建表、批量导入与表/字段注释生成完整链路，帮助科研团队将散落的数据文件快速沉淀为可查询、可治理的数据库资产。
+id_x_013（数据导入工作台）是面向科研数据资产的 Excel/CSV/XML 解析与 PostgreSQL 自动建表导入插件。上传即入库，覆盖文件解析、目标库连接、自动建表、批量导入与表/字段注释生成完整链路，帮助科研团队将散落的数据文件快速沉淀为可查询、可治理的数据库资产。
 
 ## 2. 核心特性 (Features)
 
 - **GraphQL 统一端点**：基于 Strawberry GraphQL 提供 Query/Mutation 能力，单一 `/b/id_x_013/graphql` 端点承载全部交互
-- **智能文件解析**：pandas 驱动解析 CSV/XLSX/XLS，自动返回字段 dtype 类型推断与前 3 行样本数据预览
+- **智能文件解析**：pandas + lxml 驱动解析 CSV/XLSX/XLS/XML，自动返回字段 dtype 类型推断与前 3 行样本数据预览
 - **自动建表与注释**：`CREATE TABLE IF NOT EXISTS` 自动生成目标表，并同步写入表级与字段级 COMMENT 注释
 - **参数化批量导入**：基于 `executemany` 的参数化批量写入，兼顾性能与 SQL 注入防护
 - **目标库可插拔**：host/port/user/password/dbname 五参数动态指定目标 PostgreSQL 库，导入目标随需切换
@@ -58,6 +58,7 @@ id_x_013（数据导入工作台）是面向科研数据资产的 Excel/CSV 解�
 | 数据库驱动 | psycopg2 | - | 同步批量导入驱动 |
 | 数据解析 | pandas | - | CSV/XLSX/XLS 解析 |
 | 数据解析 | openpyxl | - | Excel 文件读写 |
+| 数据解析 | lxml | - | XML 流式解析 |
 | 数据库 | PostgreSQL | - | 目标数据存储 |
 | 负载均衡 | HAProxy | - | :8080 流量入口 |
 
@@ -118,7 +119,7 @@ sequenceDiagram
     participant M as 模型层 x_models
     participant D as PostgreSQL 目标库
 
-    C->>G: Mutation: 上传文件 (CSV/XLSX/XLS)
+    C->>G: Mutation: 上传文件 (CSV/XLSX/XLS/XML)
     G->>V: 转发导入请求 + Bearer 鉴权
     V->>M: pandas 解析文件
     M-->>V: 字段 dtype + 前 3 行样本
@@ -196,7 +197,7 @@ Content-Type: application/json
 
 | 类型 | 操作 | 说明 | 关键入参 |
 | --- | --- | --- | --- |
-| Query | 解析文件预览 | 解析 CSV/XLSX/XLS，返回字段 dtype 与前 3 行样本 | 文件内容/标识 |
+| Query | 解析文件预览 | 解析 CSV/XLSX/XLS/XML，返回字段 dtype 与前 3 行样本 | 文件内容/标识 |
 | Mutation | 创建目标连接 | 校验目标库五参数连通性 | host, port, user, password, dbname |
 | Mutation | 自动建表 | CREATE TABLE IF NOT EXISTS + 表/字段注释 | 表名, 字段定义, 注释 |
 | Mutation | 批量导入 | 参数化 executemany 批量写入，单事务回滚 | 表名, 数据行集 |

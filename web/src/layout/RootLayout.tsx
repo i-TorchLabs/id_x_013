@@ -5,7 +5,7 @@ import "@/assets/styles/globals.css";
 export const metadata: Metadata = {
     title: "TorchLabs",
     description:
-        "Upload Excel/CSV files, parse data, and create database tables with ease.",
+        "Upload Excel/CSV/XML files, parse data, and create database tables with ease.",
     icons: {
         icon: "/favicon.ico",
     },

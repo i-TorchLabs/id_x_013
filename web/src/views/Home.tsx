@@ -354,7 +354,7 @@ export default function Home() {
                       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
                       onDragLeave={() => setIsDragOver(false)}
                       onDrop={handleDrop}>
-                      <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }} />
+                      <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls,.xml" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ""; }} />
                       <div className="flex flex-col items-center gap-6">
                         {isParsing ? (
                           <div className="flex flex-col items-center gap-6" style={{ padding: "24px 0" }}>
@@ -424,7 +424,7 @@ export default function Home() {
                             </div>
                             <div className="text-center">
                               <p style={{ fontFamily: SFT, fontSize: "17px", fontWeight: 600, color: fg, letterSpacing: "-0.374px" }}>Drop your file here</p>
-                              <p style={{ fontFamily: SFT, fontSize: "14px", color: fg3, letterSpacing: "-0.224px", marginTop: "6px" }}>or click to browse · CSV, XLSX, XLS</p>
+                              <p style={{ fontFamily: SFT, fontSize: "14px", color: fg3, letterSpacing: "-0.224px", marginTop: "6px" }}>or click to browse · CSV, XLSX, XLS, XML</p>
                             </div>
                           </>
                         )}
